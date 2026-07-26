@@ -1,0 +1,5 @@
+# Engulfing scanner — checked-in crontab (source of truth)
+# Runs 12:30 PM PT (3:30 PM ET), Mon–Fri. Use absolute paths; cron has no PATH/cwd.
+# Install / update:   crontab /Users/anthonycorreia/code/engulfing/crontab.txt
+# Verify:             crontab -l
+30 12 * * 1-5 /Users/anthonycorreia/code/engulfing/venv/bin/python /Users/anthonycorreia/code/engulfing/engulfing_scanner.py >> /Users/anthonycorreia/code/engulfing/scanner.log 2>&1

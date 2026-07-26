@@ -1,0 +1,13 @@
+# Secrets — never commit
+.env
+
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Runtime output
+scanner.log
+
+# macOS
+.DS_Store
