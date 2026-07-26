@@ -160,6 +160,45 @@ def check_engulfing(d: dict) -> str | None:
 
 
 # ----------------------------------------------------------------------
+# Scan core (shared by the CLI and the web app)
+# ----------------------------------------------------------------------
+def scan_stream(tickers: list[str], confirm: bool = True):
+    """
+    Yield one result dict per ticker as it is scanned, so callers can stream
+    progress. This is the single source of truth for the scan loop — both the
+    CLI (main) and the web app consume it.
+
+    Each yielded dict:
+      index    1-based position
+      total    len(tickers)
+      symbol   the ticker
+      signal   'BULLISH' | 'BEARISH' | None
+      data     candle dict (with confirmed open applied) or None if no data
+      rejected None, or {'confirmed': float, 'daily': float} when a raw hit
+               was overturned by the confirmed open
+    """
+    total = len(tickers)
+    for i, symbol in enumerate(tickers, 1):
+        d = get_candle_data(symbol)
+        signal = None
+        rejected = None
+        if d is not None:
+            signal = check_engulfing(d)
+            # Yahoo's daily Open can be a pre-open print; re-test any hit
+            # against the confirmed open before reporting it.
+            if signal and confirm:
+                confirmed = get_confirmed_open(symbol)
+                if confirmed is not None:
+                    if check_engulfing({**d, "today_open": confirmed}) == signal:
+                        d = {**d, "today_open": confirmed}
+                    else:
+                        rejected = {"confirmed": confirmed, "daily": d["today_open"]}
+                        signal = None
+        yield {"index": i, "total": total, "symbol": symbol,
+               "signal": signal, "data": d, "rejected": rejected}
+
+
+# ----------------------------------------------------------------------
 # Alerting
 # ----------------------------------------------------------------------
 def format_alert(symbol: str, direction: str, d: dict) -> str:
@@ -256,25 +295,14 @@ def main() -> None:
     print(f"Scanning {len(tickers)} tickers at {now_str}\n")
 
     alerts = []
-    for symbol in tickers:
-        d = get_candle_data(symbol)
+    for r in scan_stream(tickers):
+        d, signal, symbol = r["data"], r["signal"], r["symbol"]
         if d is None:
             continue
-        signal = check_engulfing(d)
-
-        # Yahoo's daily Open can be a pre-open print; re-test any hit against
-        # the confirmed open before alerting.
         note = ""
-        if signal:
-            confirmed = get_confirmed_open(symbol)
-            if confirmed is not None:
-                if check_engulfing({**d, "today_open": confirmed}) == signal:
-                    d = {**d, "today_open": confirmed}
-                else:
-                    note = (f"  [rejected: confirmed open {confirmed:.2f}, "
-                            f"daily bar said {d['today_open']:.2f}]")
-                    signal = None
-
+        if r["rejected"]:
+            note = (f"  [rejected: confirmed open {r['rejected']['confirmed']:.2f}, "
+                    f"daily bar said {r['rejected']['daily']:.2f}]")
         status = signal if signal else "no signal"
         print(f"  {symbol:<6} open {d['today_open']:.2f}  now {d['current_price']:.2f}  "
               f"prevH {d['prev_high']:.2f}  prevL {d['prev_low']:.2f}  -> {status}{note}")

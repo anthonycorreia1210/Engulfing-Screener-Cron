@@ -10,17 +10,35 @@ open and the current price sit beyond both of yesterday's extremes:
 ## Setup
 
 ```bash
-pip install yfinance
+pip install -r requirements.txt
 ```
 
 Edit `tickers.txt` with your watchlist (one symbol per line).
 
-Optional — for email or Telegram alerts:
+Optional — for email, ntfy, or Telegram alerts:
 
 ```bash
 cp .env.example .env
-# fill in SMTP and/or Telegram credentials
+# fill in SMTP, ntfy topic, and/or Telegram credentials
 ```
+
+## Web UI
+
+A small Flask app wraps the scanner so you can run/re-run it from a browser and
+watch results stream in live:
+
+```bash
+python3 app.py
+# open http://127.0.0.1:5001
+```
+
+Click **Run scan** to sweep the full `tickers.txt` watchlist, or type a
+comma-separated list into the box to scan just those. Manual runs ignore the
+market-hours gate (that gate is only for the unattended cron), so you can re-run
+any time — a badge notes when the market is closed. Bullish hits show 🟢, bearish
+🔴, and any names overturned by the confirmed-open check are listed in a
+collapsible section. The scan loop is shared with the CLI (`scan_stream()` in
+`engulfing_scanner.py`), so the web app and cron can never drift apart.
 
 ## Test it
 
