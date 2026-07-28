@@ -101,6 +101,15 @@ doesn't exist, so there's no error trail. Confirm a run with `tail scanner.log`.
   the price one minute into the session. A stray opening tick doesn't survive
   that; a genuine gap still does. Rejections are logged with both values, and
   the extra 1-min fetch only happens for tickers that already passed.
+- **Missing-day guard.** Yahoo occasionally drops a whole trading day from the
+  *daily* feed (2026-07-24 went missing market-wide), which would silently
+  anchor the scan to the wrong "previous day" and fire false signals. (MS on
+  2026-07-27 flagged bearish against Thursday's low of 213.72, but Friday's
+  real low was 211.21 — no engulfer.) When a weekday sits between the daily
+  feed's previous bar and today, the previous session is rebuilt from 1-minute
+  data (which retains ~7 days) and preferred when it proves a more recent
+  session actually traded. Holidays self-correct — a genuine holiday has no
+  intraday data, so nothing overrides. Overrides are logged as `[gap-fix]`.
 - Early-close days (day after Thanksgiving, Christmas Eve, etc.) close at
   1:00 PM ET — the cron will fire after the close on those days and simply
   report against the final prices. Add a 10:30 AM PT entry if you want to

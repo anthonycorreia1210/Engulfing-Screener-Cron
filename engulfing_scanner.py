@@ -23,7 +23,7 @@ import argparse
 import os
 import smtplib
 import sys
-from datetime import datetime
+from datetime import datetime, timedelta
 from email.mime.text import MIMEText
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -66,6 +66,45 @@ def load_tickers(cli_tickers: str | None) -> list[str]:
 # ----------------------------------------------------------------------
 # Market data
 # ----------------------------------------------------------------------
+def _weekdays_between(d1, d2) -> int:
+    """Count weekdays strictly between two dates (exclusive of both ends)."""
+    n = 0
+    d = d1 + timedelta(days=1)
+    while d < d2:
+        if d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+
+def _prev_session_from_intraday(tkr, scan_date) -> dict | None:
+    """
+    Reconstruct the OHLC of the most recent completed regular-hours session
+    strictly before scan_date, from 1-minute data (which yfinance retains ~7
+    days even when a daily bar goes missing). Returns None if unavailable.
+    """
+    try:
+        intr = tkr.history(period="7d", interval="1m", prepost=False)
+        if intr.empty:
+            return None
+        rth = intr.between_time("09:30", "16:00")
+        if rth.empty:
+            return None
+        sessions = [(d, g) for d, g in rth.groupby(rth.index.date) if d < scan_date]
+        if not sessions:
+            return None
+        d, g = sessions[-1]
+        return {
+            "date": d,
+            "high": float(g["High"].max()),
+            "low": float(g["Low"].min()),
+            "open": float(g["Open"].iloc[0]),
+            "close": float(g["Close"].iloc[-1]),
+        }
+    except Exception:
+        return None
+
+
 def get_candle_data(symbol: str) -> dict | None:
     """
     Returns dict with prev_{high,low,open,close}, today_open, current_price
@@ -85,14 +124,36 @@ def get_candle_data(symbol: str) -> dict | None:
         if last_bar_date == today_et:
             today_bar = daily.iloc[-1]
             prev_bar = daily.iloc[-2]
+            prev_date = daily.index[-2].date()
             today_open = float(today_bar["Open"])
         else:
             # Today's daily bar not present yet; get open from 1-min data.
             prev_bar = daily.iloc[-1]
+            prev_date = last_bar_date
             intraday = tkr.history(period="1d", interval="1m")
             if intraday.empty:
                 return None
             today_open = float(intraday.iloc[0]["Open"])
+
+        prev_high = float(prev_bar["High"])
+        prev_low = float(prev_bar["Low"])
+        prev_open = float(prev_bar["Open"])
+        prev_close = float(prev_bar["Close"])
+
+        # Yahoo occasionally drops a whole trading day from the DAILY feed
+        # (2026-07-24 went missing market-wide), which silently anchors the
+        # scan to the wrong "previous day". If a weekday sits between prev_date
+        # and today, reconstruct the previous session from 1-minute data and
+        # prefer it when it proves a more recent session actually traded.
+        # Holidays self-correct: the gap day has no intraday, so nothing wins.
+        if _weekdays_between(prev_date, today_et) > 0:
+            recon = _prev_session_from_intraday(tkr, today_et)
+            if recon and recon["date"] > prev_date:
+                print(f"  [gap-fix] {symbol}: daily feed skipped {recon['date']}; "
+                      f"using it as prev day (was {prev_date})", file=sys.stderr)
+                prev_date = recon["date"]
+                prev_high, prev_low = recon["high"], recon["low"]
+                prev_open, prev_close = recon["open"], recon["close"]
 
         # Current price: prefer fast_info, fall back to last 1-min close.
         current_price = None
@@ -107,10 +168,10 @@ def get_candle_data(symbol: str) -> dict | None:
             current_price = float(intraday.iloc[-1]["Close"])
 
         return {
-            "prev_high": float(prev_bar["High"]),
-            "prev_low": float(prev_bar["Low"]),
-            "prev_open": float(prev_bar["Open"]),
-            "prev_close": float(prev_bar["Close"]),
+            "prev_high": prev_high,
+            "prev_low": prev_low,
+            "prev_open": prev_open,
+            "prev_close": prev_close,
             "today_open": today_open,
             "current_price": current_price,
         }
