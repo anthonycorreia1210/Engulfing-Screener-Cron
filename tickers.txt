@@ -1,10 +1,9 @@
 # One symbol per line. Lines starting with # are ignored.
-# Grouped by sector (source: Yahoo Finance / S&P GICS). Order within a sector is alphabetical.
+# Grouped by sector (source: Yahoo Finance). Order within a sector is alphabetical.
 
-# --- Technology (86) ---
+# --- Technology (67) ---
 AAOI
 AAPL
-ACN
 ADBE
 ADI
 ADP
@@ -13,14 +12,12 @@ ALGM
 ALNT
 AMAT
 AMD
-ANET
 APH
 APLD
 ARM
 ASTS
 AVGO
 BBAI
-CDNS
 CIEN
 COHR
 CRM
@@ -28,33 +25,23 @@ CRWD
 CRWV
 CSCO
 DDOG
-DELL
-FLEX
-FTNT
 GLW
-HPE
 IBM
 INTC
 INTU
 IONQ
 IOT
-KEYS
-KLAC
 LITE
 LRCX
-MCHP
-MPWR
 MRVL
 MSFT
 MSTR
 MU
 NET
 NOVT
-NOW
 NVDA
 NXPI
 OKTA
-ON
 ONDS
 ORCL
 PANW
@@ -73,29 +60,21 @@ SHOP
 SMCI
 SNDK
 SNOW
-SNPS
 SOUN
-STX
 TDY
-TEL
-TER
 TSM
 TWLO
 TXN
 UBER
 UMAC
 VSAT
-WDAY
-WDC
 ZS
 
-# --- Communication Services (17) ---
+# --- Communication Services (11) ---
 APP
 BIDU
 BILI
-CMCSA
 DIS
-ECHO
 GOOGL
 IRDM
 META
@@ -103,87 +82,57 @@ NBIS
 NFLX
 RBLX
 SPOT
-T
-TMUS
-VZ
-WBD
 
-# --- Consumer Cyclical (29) ---
+# --- Consumer Cyclical (19) ---
 ABNB
 AMZN
 AUR
-AZO
 BABA
-BKNG
-CMG
-CVNA
 DASH
 ETSY
 F
 GM
 HD
-HLT
 LI
 LOW
-MAR
 MCD
 NKE
-ORLY
 PDD
 QS
-RCL
 RIVN
-ROST
 SBUX
-TJX
 TSLA
 XPEV
 
-# --- Consumer Defensive (10) ---
+# --- Consumer Defensive (6) ---
 COST
 KO
-MDLZ
-MNST
-MO
 PEP
 PG
-PM
 TGT
 WMT
 
-# --- Financial Services (30) ---
-APO
+# --- Financial Services (18) ---
 AXP
 BAC
 BLK
-BNY
-BRK-B
-BX
 C
-CB
-CME
 COF
 COIN
 GS
 HOOD
-ICE
 JPM
 LMND
 MA
 MS
-PGR
-PNC
 PYPL
 RKT
 SCHW
 SOFI
-SPGI
-TRV
-USB
 V
 WFC
 
-# --- Healthcare (42) ---
+# --- Healthcare (31) ---
 ABBV
 ABT
 ACHC
@@ -192,70 +141,52 @@ ANRO
 ARVN
 ATAI
 BMY
-BSX
-CAH
 CRSP
 CVS
 DFTX
-DHR
-ELV
 GILD
-HCA
-HUM
 ILMN
 ISRG
 JNJ
 KYTX
 LBRX
 LLY
-MCK
-MDT
 MNKD
 MRK
 MRNA
 NAMS
 NVO
 PFE
-REGN
 RXRX
-SYK
 TARS
 TEM
 TMO
 TXG
 TYRA
 UNH
-VRTX
 
-# --- Industrials (64) ---
+# --- Industrials (52) ---
 AAL
 ACHR
 ALK
 AMPX
 ATI
 AVAV
-AXON
 BA
 BKSY
 CAT
-CMI
 CRS
-CSX
-CTAS
 DAL
 DE
 ETN
 FDX
-FIX
 FLY
 GD
 GE
 GEV
 HON
 HONA
-HWM
 HXL
-JCI
 JOBY
 KBR
 KTOS
@@ -267,10 +198,8 @@ MMM
 MRCY
 NNE
 NOC
-PH
 PL
 PLUG
-PWR
 RCAT
 RDW
 RKLB
@@ -282,63 +211,45 @@ SMR
 SPCE
 SPCX
 SPIR
-TT
 TXT
 UAL
-UNP
 UPS
-URI
 VOYG
 VRT
 XE
 YSS
 
-# --- Energy (18) ---
-BKR
+# --- Energy (12) ---
 CCJ
 COP
 CVX
-DVN
+HAL
 KMI
 LEU
-MPC
+LNG
 NUCL
 OXY
-PSX
 PTEN
 SKYQ
 SLB
 UUUU
-VLO
-WMB
 XOM
 
-# --- Basic Materials (9) ---
+# --- Basic Materials (7) ---
 AA
 APD
 CLF
 FCX
 LIN
 MP
-NEM
-SHW
 TECK
 
-# --- Utilities (7) ---
-AEP
-CEG
+# --- Utilities (5) ---
 IMSR
 NEE
 OKLO
 STEM
 VST
-
-# --- Real Estate (5) ---
-AMT
-DLR
-EQIX
-PLD
-WELL
 
 # --- ETFs (19) ---
 ARKK
