@@ -8,6 +8,7 @@ __pycache__/
 
 # Runtime output
 scanner.log
+signals.db
 
 # macOS
 .DS_Store

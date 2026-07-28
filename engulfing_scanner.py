@@ -21,6 +21,7 @@ Usage:
 
 import argparse
 import os
+import re
 import smtplib
 import sys
 from datetime import datetime, timedelta
@@ -29,6 +30,8 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import yfinance as yf
+
+import history
 
 ET = ZoneInfo("America/New_York")
 SCRIPT_DIR = Path(__file__).resolve().parent
@@ -61,6 +64,33 @@ def load_tickers(cli_tickers: str | None) -> list[str]:
         for line in tickers_file.read_text().splitlines()
         if line.strip() and not line.strip().startswith("#")
     ]
+
+
+def load_tickers_by_sector() -> dict[str, list[str]]:
+    """
+    Parse tickers.txt into {sector: [symbols]}, preserving file order.
+    Sector headers look like:  # --- Technology (67) ---
+    (the count is ignored; the actual list is what matters). Symbols above
+    the first header are grouped under 'Other'.
+    """
+    tickers_file = SCRIPT_DIR / "tickers.txt"
+    if not tickers_file.exists():
+        return {}
+    sectors: dict[str, list[str]] = {}
+    current = "Other"
+    for line in tickers_file.read_text().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        m = re.match(r"#\s*---\s*(.+?)\s*(?:\(\d+\))?\s*---", line)
+        if m:
+            current = m.group(1)
+            sectors.setdefault(current, [])
+            continue
+        if line.startswith("#"):
+            continue
+        sectors.setdefault(current, []).append(line.upper())
+    return {s: t for s, t in sectors.items() if t}
 
 
 # ----------------------------------------------------------------------
@@ -356,6 +386,7 @@ def main() -> None:
     print(f"Scanning {len(tickers)} tickers at {now_str}\n")
 
     alerts = []
+    hits = []
     for r in scan_stream(tickers):
         d, signal, symbol = r["data"], r["signal"], r["symbol"]
         if d is None:
@@ -369,6 +400,7 @@ def main() -> None:
               f"prevH {d['prev_high']:.2f}  prevL {d['prev_low']:.2f}  -> {status}{note}")
         if signal:
             alerts.append(format_alert(symbol, signal, d))
+            hits.append((symbol, signal, d))
 
     if alerts:
         body = f"Engulfing Scanner — {now_str}\n\n" + "\n\n".join(alerts)
@@ -379,6 +411,19 @@ def main() -> None:
         send_telegram(body)
     else:
         print("\nNo engulfing setups found.")
+
+    # Persist today's confirmed signals and refresh forward performance for
+    # earlier ones. Real runs only — dry-run can fire on stale, closed-market
+    # prices that would pollute the record.
+    if not args.dry_run:
+        try:
+            for symbol, signal, d in hits:
+                history.record_signal(symbol, signal, d)
+            n = history.update_performance()
+            if n:
+                print(f"[history] {n} performance row(s) added")
+        except Exception as exc:
+            print(f"  [warn] history update failed ({exc})", file=sys.stderr)
 
 
 if __name__ == "__main__":

@@ -17,14 +17,18 @@ import json
 import threading
 from datetime import datetime
 
+import yfinance as yf
 from flask import Flask, Response, render_template, request
 
+import backtest
+import history
 from engulfing_scanner import (
     ET,
     SCRIPT_DIR,
     is_market_open_window,
     load_dotenv,
     load_tickers,
+    load_tickers_by_sector,
     scan_stream,
 )
 
@@ -42,14 +46,22 @@ def _sse(obj: dict) -> str:
 
 @app.route("/")
 def index():
-    return render_template("index.html")
+    sectors = [{"name": s, "count": len(t)}
+               for s, t in load_tickers_by_sector().items()]
+    return render_template("index.html", sectors=sectors)
 
 
 @app.route("/api/scan")
 def scan():
-    # Optional ?tickers=AAPL,TSLA override; default is the full watchlist.
-    override = request.args.get("tickers")
-    tickers = load_tickers(override) if override else load_tickers(None)
+    # Optional ?sectors=Technology,Energy filter; default is the full watchlist.
+    selected = [s.strip() for s in request.args.get("sectors", "").split(",") if s.strip()]
+    if selected:
+        by_sector = load_tickers_by_sector()
+        tickers = [t for s in selected for t in by_sector.get(s, [])]
+    else:
+        tickers = load_tickers(None)
+    if not tickers:
+        tickers = load_tickers(None)
 
     def stream():
         if not _scan_lock.acquire(blocking=False):
@@ -57,11 +69,12 @@ def scan():
             return
         try:
             started = datetime.now(ET).strftime("%Y-%m-%d %H:%M:%S ET")
+            market_open = is_market_open_window()
             yield _sse({
                 "type": "start",
                 "total": len(tickers),
                 "started": started,
-                "marketOpen": is_market_open_window(),
+                "marketOpen": market_open,
             })
             signals = []
             for r in scan_stream(tickers):
@@ -73,6 +86,14 @@ def scan():
                     "symbol": r["symbol"],
                 }
                 if r["signal"] and d is not None:
+                    # Record for the History tab — only while the market is
+                    # open (closed-market prices are stale) and idempotently
+                    # per symbol+day, so re-runs and the cron can't duplicate.
+                    if market_open:
+                        try:
+                            history.record_signal(r["symbol"], r["signal"], d)
+                        except Exception:
+                            pass
                     item = {
                         "symbol": r["symbol"],
                         "direction": r["signal"],
@@ -103,6 +124,72 @@ def scan():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/api/history")
+def api_history():
+    # Lazily fill in any newly completed trading days before serving.
+    try:
+        history.update_performance()
+    except Exception as exc:
+        print(f"[warn] performance update failed: {exc}")
+    records = history.get_history()
+
+    # For signals still inside their window, add a live % while the market
+    # is open (when closed it would just duplicate the last stored close).
+    # Baseline is the trigger day's close — signals triggered today don't
+    # have one yet, so they show nothing until tomorrow.
+    if is_market_open_window():
+        prices: dict[str, float | None] = {}
+        for r in records:
+            if r["complete"] or not r["trigger_close"]:
+                continue
+            sym = r["symbol"]
+            if sym not in prices:
+                try:
+                    prices[sym] = float(yf.Ticker(sym).fast_info["last_price"])
+                except Exception:
+                    prices[sym] = None
+            if prices[sym]:
+                r["live_pct"] = (prices[sym] - r["trigger_close"]) / r["trigger_close"] * 100
+    return {"records": records, "trackDays": history.TRACK_DAYS}
+
+
+@app.route("/api/backtest")
+def run_backtest():
+    years = max(1, min(10, request.args.get("years", 5, type=int)))
+    tickers = load_tickers(None)
+
+    def stream():
+        # Shares the scan lock — both hammer yfinance.
+        if not _scan_lock.acquire(blocking=False):
+            yield _sse({"type": "busy"})
+            return
+        try:
+            yield _sse({"type": "start", "total": len(tickers), "years": years})
+            for ev in backtest.backtest_stream(tickers, years):
+                yield _sse(ev)
+        finally:
+            _scan_lock.release()
+
+    return Response(
+        stream(),
+        mimetype="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@app.route("/api/backtest/results")
+def backtest_results():
+    data = backtest.get_backtest()
+    data["trackDays"] = history.TRACK_DAYS
+    # Stamp each signal with its sector (from tickers.txt) so the UI can
+    # slice results without a re-run. Symbols no longer in the watchlist
+    # fall under "Other".
+    sector_of = {t: s for s, ts in load_tickers_by_sector().items() for t in ts}
+    for r in data["records"]:
+        r["sector"] = sector_of.get(r["symbol"], "Other")
+    return data
 
 
 if __name__ == "__main__":

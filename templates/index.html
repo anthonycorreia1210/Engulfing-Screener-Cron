@@ -19,20 +19,33 @@
   h1{margin:0;font-size:24px;letter-spacing:-.02em}
   .sub{color:var(--muted);margin-top:4px;font-size:14px}
   .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:22px 0}
-  button#run{appearance:none;border:none;border-radius:10px;padding:12px 22px;
+  button#run,button#btrun{appearance:none;border:none;border-radius:10px;padding:12px 22px;
     font-size:15px;font-weight:600;color:#04140a;cursor:pointer;
     background:linear-gradient(180deg,#34d364,#22c55e);transition:transform .05s,filter .15s}
-  button#run:hover{filter:brightness(1.06)}
-  button#run:active{transform:translateY(1px)}
-  button#run:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.3)}
+  button#run:hover,button#btrun:hover{filter:brightness(1.06)}
+  button#run:active,button#btrun:active{transform:translateY(1px)}
+  button#run:disabled,button#btrun:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.3)}
   .badge{font-size:12px;font-weight:600;padding:5px 10px;border-radius:999px;border:1px solid var(--border)}
   .badge.open{color:var(--green);border-color:#1f5133;background:var(--green-dim)}
   .badge.closed{color:var(--muted)}
   .meta{color:var(--muted);font-size:13px}
-  .custom{margin:-6px 0 4px}
-  .custom input{background:var(--panel2);border:1px solid var(--border);color:var(--text);
-    border-radius:8px;padding:8px 11px;font-size:13px;width:260px;max-width:100%}
-  .custom label{color:var(--muted);font-size:12px;display:block;margin-bottom:5px}
+  .tabs{display:flex;gap:2px;margin:20px 0 22px;border-bottom:1px solid var(--border)}
+  .tab{appearance:none;background:none;border:none;color:var(--muted);font:inherit;font-size:14px;
+    font-weight:600;padding:8px 14px;cursor:pointer;border-bottom:2px solid transparent;margin-bottom:-1px}
+  .tab:hover{color:var(--text)}
+  .tab.active{color:var(--text);border-bottom-color:var(--green)}
+
+  .sectors{margin:-6px 0 4px}
+  .sectors>.lbl{color:var(--muted);font-size:12px;display:block;margin-bottom:7px}
+  .chips{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:inline-flex;align-items:center;gap:6px;cursor:pointer;user-select:none;
+    background:var(--panel2);border:1px solid var(--border);border-radius:999px;
+    padding:6px 12px;font-size:13px;color:var(--muted);transition:border-color .15s,color .15s}
+  .chip:hover{border-color:#33465e}
+  .chip input{display:none}
+  .chip .n{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums;opacity:.7}
+  .chip:has(input:checked){color:var(--green);border-color:#1f5133;background:var(--green-dim)}
+  .chip:has(input:checked) .n{color:var(--green);opacity:.8}
 
   .progress{display:none;margin:20px 0}
   .progress.show{display:block}
@@ -66,6 +79,42 @@
   details.rejected .body div{padding:4px 0;border-top:1px solid var(--border)}
   details.rejected code{color:var(--text)}
 
+  .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin:0 0 20px}
+  .stat{background:var(--panel);border:1px solid var(--border);border-radius:12px;padding:12px 14px}
+  .stat .h{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;margin-bottom:8px}
+  .stat .row{display:flex;align-items:baseline;gap:8px;padding:3px 0;
+    font-size:13px;font-variant-numeric:tabular-nums}
+  .stat .val{display:inline-block;min-width:62px}
+  .stat .who{color:var(--muted);font-size:12px}
+  .stat .val{font-weight:700;font-size:15px}
+  .stat .sub{color:var(--muted);font-size:11px}
+
+  .histbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:26px 0 14px}
+  .histbar .summary{margin:0}
+  .seg{display:inline-flex;border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .seg button{appearance:none;background:none;border:none;color:var(--muted);font:inherit;font-size:12px;
+    font-weight:600;padding:5px 12px;cursor:pointer}
+  .seg button:hover{color:var(--text)}
+  .seg button.active{background:var(--panel);color:var(--text)}
+
+  .histwrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px;background:var(--panel)}
+  .histwrap.tall{max-height:480px;overflow-y:auto}
+  table.hist{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .hist th,.hist td{padding:8px 10px;text-align:right;border-bottom:1px solid var(--border)}
+  .hist th{color:var(--muted);font-size:11px;text-transform:uppercase;letter-spacing:.05em;font-weight:600;
+    position:sticky;top:0;background:var(--panel);z-index:1}
+  .hist th:first-child,.hist td:first-child{text-align:left;padding-left:14px}
+  .hist tbody tr:last-child td{border-bottom:none}
+  .hist td.sym{font-weight:700;font-size:14px}
+  .hist .pos{color:var(--green)}
+  .hist .neg{color:var(--red)}
+  .hist .dim{color:var(--muted);opacity:.45}
+  .hist td.live{font-style:italic}
+  .histnote{color:var(--muted);font-size:12px;margin:12px 2px 0;line-height:1.6}
+
+  .controls select{background:var(--panel2);border:1px solid var(--border);color:var(--text);
+    border-radius:8px;padding:8px 10px;font-size:13px;font:inherit}
+
   .empty{color:var(--muted);padding:30px 0;text-align:center}
   .err{color:var(--red);margin-top:16px}
   .foot{margin-top:40px;color:var(--muted);font-size:12px;line-height:1.7}
@@ -79,28 +128,127 @@
     <div class="sub">Body engulfers — today's open &amp; close both clear the previous day's entire range.</div>
   </header>
 
-  <div class="custom">
-    <label for="tickers">Tickers to scan (blank = full watchlist)</label>
-    <input id="tickers" placeholder="e.g. AAPL, TSLA, NVDA" autocomplete="off" spellcheck="false">
+  <nav class="tabs">
+    <button class="tab active" id="tab-scan">Scanner</button>
+    <button class="tab" id="tab-history">History</button>
+    <button class="tab" id="tab-backtest">Backtest</button>
+  </nav>
+
+  <div id="view-scan">
+    <div class="sectors">
+      <span class="lbl">Filter by sector (none checked = full watchlist)</span>
+      <div class="chips" id="chips">
+        {% for s in sectors %}
+        <label class="chip"><input type="checkbox" value="{{ s.name }}">{{ s.name }} <span class="n">{{ s.count }}</span></label>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="run">Run scan</button>
+      <span id="market" class="badge closed">—</span>
+      <span id="lastrun" class="meta"></span>
+    </div>
+
+    <div class="progress" id="progress">
+      <div class="bar"><i id="barfill"></i></div>
+      <div class="pmeta"><span id="pcount">0 / 0</span><span class="cur" id="pcur"></span></div>
+    </div>
+
+    <div id="results"></div>
+
+    <div class="foot">
+      Manual runs ignore the market-hours gate (that's only for the unattended cron), so you can re-run any time.
+      Each hit is re-checked against a <b>confirmed open</b> (the first regular-hours minute) to reject Yahoo's
+      occasional pre-open prints. Data via yfinance. Scanning the full watchlist takes a couple of minutes.
+    </div>
   </div>
 
-  <div class="controls">
-    <button id="run">Run scan</button>
-    <span id="market" class="badge closed">—</span>
-    <span id="lastrun" class="meta"></span>
+  <div id="view-history" hidden>
+    <div class="stats" id="histstats"></div>
+    <div class="histbar">
+      <div class="summary" id="histstatus">Loading…</div>
+      <div class="seg" id="histmode">
+        <button class="active" data-mode="cum">Cumulative</button>
+        <button data-mode="daily">Daily</button>
+      </div>
+    </div>
+    <div id="histbody"></div>
+    <div class="histnote">
+      All moves are measured from official closes, starting at the <b>engulfing day's close</b> — so +1d
+      matches the next day's move as charted. <b>Cumulative</b> shows the running change since the trigger;
+      <b>Daily</b> shows each day's individual move. Overview tiles always use cumulative moves;
+      <b>med</b> (median) is the headline because it resists outliers like ARAI's −30% runs, with the raw
+      average beside it. <i>Entry</i> is the price when the alert fired (~30 min before the close), for
+      reference. Signals are tracked for <b>10 trading days</b> (~2 weeks), then frozen. <i>Live</i> shows
+      the current move for still-tracking signals while the market is open. Colors reflect price
+      direction, not win/loss — a bearish signal "wants" red.
+    </div>
   </div>
 
-  <div class="progress" id="progress">
-    <div class="bar"><i id="barfill"></i></div>
-    <div class="pmeta"><span id="pcount">0 / 0</span><span class="cur" id="pcur"></span></div>
-  </div>
+  <div id="view-backtest" hidden>
+    <div class="controls">
+      <button id="btrun">Run backtest</button>
+      <select id="btyears">
+        <option value="1">1 year</option>
+        <option value="2">2 years</option>
+        <option value="3">3 years</option>
+        <option value="5" selected>5 years</option>
+        <option value="10">10 years</option>
+      </select>
+      <select id="btmult" title="Minimum body size as a multiple of the prior day's range">
+        <option value="0">Any body size</option>
+        <option value="1.5">Body ≥ 1.5× prior range</option>
+        <option value="2">Body ≥ 2× prior range</option>
+        <option value="3">Body ≥ 3× prior range</option>
+      </select>
+      <select id="btatr" title="Minimum body size relative to the stock's own 20-day ATR">
+        <option value="0">Any vs ATR</option>
+        <option value="1">Body ≥ 1× ATR20</option>
+        <option value="1.5">Body ≥ 1.5× ATR20</option>
+        <option value="2">Body ≥ 2× ATR20</option>
+      </select>
+      <select id="btvol" title="Minimum trigger-day volume relative to its 20-day average">
+        <option value="0">Any volume</option>
+        <option value="1.5">Vol ≥ 1.5× avg</option>
+        <option value="2">Vol ≥ 2× avg</option>
+        <option value="3">Vol ≥ 3× avg</option>
+      </select>
+      <span id="btmeta" class="meta"></span>
+    </div>
 
-  <div id="results"></div>
+    <div class="sectors">
+      <span class="lbl">Filter by sector (none checked = all)</span>
+      <div class="chips" id="btchips">
+        {% for s in sectors %}
+        <label class="chip"><input type="checkbox" value="{{ s.name }}">{{ s.name }}</label>
+        {% endfor %}
+      </div>
+    </div>
 
-  <div class="foot">
-    Manual runs ignore the market-hours gate (that's only for the unattended cron), so you can re-run any time.
-    Each hit is re-checked against a <b>confirmed open</b> (the first regular-hours minute) to reject Yahoo's
-    occasional pre-open prints. Data via yfinance. Scanning the full watchlist takes a couple of minutes.
+    <div class="progress" id="btprogress">
+      <div class="bar"><i id="btbarfill"></i></div>
+      <div class="pmeta"><span id="btpcount">0 / 0</span><span class="cur" id="btpcur"></span></div>
+    </div>
+
+    <div class="stats" id="btstats"></div>
+    <div class="histbar">
+      <div class="summary" id="btstatus"></div>
+      <div class="seg" id="btmodeseg">
+        <button class="active" data-mode="cum">Cumulative</button>
+        <button data-mode="daily">Daily</button>
+      </div>
+    </div>
+    <div id="btbody"></div>
+
+    <div class="histnote">
+      Same rule, same close-to-close math as History, applied to years of daily bars — but an
+      approximation: the "price 30 min before close" is replaced by the official close, the
+      confirmed-open and missing-day guards can't be applied historically, and only the
+      <b>current</b> watchlist is tested, so delisted names are invisible (survivorship bias
+      skews results optimistic). Flat prior days (high = low) are skipped as stale-microcap noise.
+      A run takes a minute or two and replaces the previous run's results.
+    </div>
   </div>
 </div>
 
@@ -108,7 +256,7 @@
 const $ = s => document.querySelector(s);
 const runBtn = $('#run'), results = $('#results'), progress = $('#progress');
 const barfill = $('#barfill'), pcount = $('#pcount'), pcur = $('#pcur');
-const marketBadge = $('#market'), lastrun = $('#lastrun'), tickersInput = $('#tickers');
+const marketBadge = $('#market'), lastrun = $('#lastrun');
 let es = null;
 
 function fmt(n){ return Number(n).toFixed(2); }
@@ -152,8 +300,8 @@ function startScan(){
   const rejected = [];
   let signalCount = 0;
 
-  const custom = tickersInput.value.trim();
-  const url = '/api/scan' + (custom ? '?tickers=' + encodeURIComponent(custom) : '');
+  const checked = [...document.querySelectorAll('#chips input:checked')].map(c => c.value);
+  const url = '/api/scan' + (checked.length ? '?sectors=' + encodeURIComponent(checked.join(',')) : '');
   es = new EventSource(url);
 
   es.onmessage = ev => {
@@ -225,6 +373,255 @@ function finish(){
 }
 
 runBtn.addEventListener('click', startScan);
+
+// ---- Tabs ----
+const views = {
+  scan:     {tab: $('#tab-scan'),     view: $('#view-scan')},
+  history:  {tab: $('#tab-history'),  view: $('#view-history'),  onshow: () => loadHistory()},
+  backtest: {tab: $('#tab-backtest'), view: $('#view-backtest'), onshow: () => loadBacktest()},
+};
+function showTab(name){
+  for (const [k, v] of Object.entries(views)){
+    v.tab.classList.toggle('active', k === name);
+    v.view.hidden = k !== name;
+  }
+  if (views[name].onshow) views[name].onshow();
+}
+Object.entries(views).forEach(([k, v]) => v.tab.addEventListener('click', () => showTab(k)));
+
+// ---- History tab ----
+const histStatus = $('#histstatus'), histBody = $('#histbody');
+const histStats = $('#histstats'), histMode = $('#histmode');
+let histData = null, mode = 'cum';
+
+histMode.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.dataset.mode === mode) return;
+  mode = btn.dataset.mode;
+  [...histMode.children].forEach(b => b.classList.toggle('active', b === btn));
+  if (histData) renderHistory(histData);
+});
+
+function pctf(p){ return (p >= 0 ? '+' : '') + p.toFixed(2) + '%'; }
+function pctCell(p, extra, title){
+  return `<td class="${p >= 0 ? 'pos' : 'neg'}${extra ? ' ' + extra : ''}"`
+       + `${title ? ` title="${title}"` : ''}>${pctf(p)}</td>`;
+}
+
+async function loadHistory(){
+  histStatus.textContent = 'Loading… (updating performance data)';
+  histBody.innerHTML = '';
+  histStats.innerHTML = '';
+  try {
+    const res = await fetch('/api/history');
+    histData = await res.json();
+  } catch (e) {
+    histStatus.textContent = 'Failed to load history. Is the server still running?';
+    return;
+  }
+  renderHistory(histData);
+}
+
+function median(a){
+  const s = [...a].sort((x, y) => x - y), m = s.length >> 1;
+  return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
+}
+
+function renderStats(recs, el){
+  const OFFSETS = [1, 3, 7, 10];
+  el.innerHTML = OFFSETS.map(off => {
+    const rows = [['BULLISH', '🟢'], ['BEARISH', '🔴']].map(([dir, dot]) => {
+      const vals = recs.flatMap(r => r.direction === dir
+        ? r.days.filter(d => d.day_offset === off).map(d => d.pct) : []);
+      const who = `<span class="who" title="${dir.toLowerCase()} signals">${dot}</span>`;
+      if (!vals.length)
+        return `<div class="row">${who}<span class="sub">no data yet</span></div>`;
+      const med = median(vals), avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+      const wins = vals.filter(v => dir === 'BULLISH' ? v > 0 : v < 0).length;
+      return `<div class="row">${who}`
+        + `<span><span class="val ${med >= 0 ? 'pos' : 'neg'}">${pctf(med)}</span>`
+        + ` <span class="sub">avg ${pctf(avg)} · win ${Math.round(wins / vals.length * 100)}% · n=${vals.length}</span></span></div>`;
+    }).join('');
+    return `<div class="stat"><div class="h">+${off}d after trigger</div>${rows}</div>`;
+  }).join('');
+}
+
+function buildTable(recs, n, opts){
+  let head = `<tr><th>Ticker</th><th>Signal</th><th>Triggered</th><th>${opts.entryLabel || 'Entry'}</th>`;
+  if (opts.strength) head += '<th title="body ÷ prior day range">×Range</th>'
+    + '<th title="body ÷ 20-day ATR">×ATR</th>'
+    + '<th title="volume ÷ 20-day average volume">×Vol</th>';
+  for (let i = 1; i <= n; i++) head += `<th>+${i}d</th>`;
+  if (opts.live) head += '<th>Live</th>';
+  head += '</tr>';
+
+  const rows = recs.map(r => {
+    const dir = r.direction === 'BULLISH' ? 'bull' : 'bear';
+    const byOff = Object.fromEntries(r.days.map(d => [d.day_offset, d]));
+    let cells = '', prevClose = r.trigger_close, lastClose = r.trigger_close;
+    for (let i = 1; i <= n; i++){
+      const p = byOff[i];
+      if (!p){ cells += '<td class="dim">–</td>'; continue; }
+      let title = `${p.date} close ${fmt(p.close)}`;
+      if (opts.mode === 'cum'){
+        cells += pctCell(p.pct, '', title);
+      } else if (prevClose){
+        // Single-day move vs the last available close; when the prior bar
+        // is missing (Yahoo gap) the value spans the gap — flag it.
+        if (i > 1 && !byOff[i - 1]) title += ' · spans missing prior day';
+        cells += pctCell((p.close - prevClose) / prevClose * 100, '', title);
+      } else {
+        cells += '<td class="dim">–</td>';
+      }
+      prevClose = p.close;
+      lastClose = p.close;
+    }
+    let live = '';
+    if (opts.live){
+      live = '<td class="dim">–</td>';
+      if (r.live_pct !== undefined && r.live_pct !== null && r.trigger_close){
+        const livePrice = r.trigger_close * (1 + r.live_pct / 100);
+        const livePct = opts.mode === 'cum' ? r.live_pct
+          : (lastClose ? (livePrice - lastClose) / lastClose * 100 : null);
+        if (livePct !== null) live = pctCell(livePct, 'live');
+      }
+    }
+    const entryTitle = (r.trigger_close && r.trigger_close !== r.trigger_price)
+      ? ` title="closed that day at ${fmt(r.trigger_close)}"` : '';
+    let strength = '';
+    if (opts.strength){
+      strength = `<td>${r.body_mult ? r.body_mult.toFixed(1) + '×' : '–'}</td>`
+        + `<td>${r.body_atr ? r.body_atr.toFixed(1) + '×' : '–'}</td>`
+        + `<td>${r.vol_mult ? r.vol_mult.toFixed(1) + '×' : '–'}</td>`;
+    }
+    return `<tr><td class="sym">${r.symbol}</td>`
+      + `<td><span class="pill ${dir}">${r.direction}</span></td>`
+      + `<td>${r.trigger_date}</td>`
+      + `<td${entryTitle}>${fmt(r.trigger_price)}</td>${strength}`
+      + `${cells}${live}</tr>`;
+  }).join('');
+
+  return `<div class="histwrap${opts.tall ? ' tall' : ''}"><table class="hist">`
+    + `<thead>${head}</thead><tbody>${rows}</tbody></table></div>`;
+}
+
+function renderHistory(data){
+  const recs = data.records, n = data.trackDays;
+  if (!recs.length){
+    histStatus.textContent = 'No signals recorded yet.';
+    histBody.innerHTML = '<div class="empty">Signals will appear here once a scan fires one during market hours.</div>';
+    return;
+  }
+  const tracking = recs.filter(r => !r.complete).length;
+  histStatus.innerHTML = `<b>${recs.length}</b> signal${recs.length === 1 ? '' : 's'} recorded · `
+    + `<b>${tracking}</b> still in the ${n}-day window`;
+  renderStats(recs, histStats);
+  histBody.innerHTML = buildTable(recs, n, {mode, live: true});
+}
+
+// ---- Backtest tab ----
+const btRun = $('#btrun'), btYears = $('#btyears'), btMeta = $('#btmeta');
+const btProgress = $('#btprogress'), btBar = $('#btbarfill');
+const btCount = $('#btpcount'), btCur = $('#btpcur');
+const btStats = $('#btstats'), btStatus = $('#btstatus'), btBody = $('#btbody');
+const btMult = $('#btmult'), btAtr = $('#btatr'), btVol = $('#btvol');
+const btModeSeg = $('#btmodeseg'), btChips = $('#btchips');
+let btES = null, btData = null, btMode = 'cum';
+
+[btMult, btAtr, btVol, btChips].forEach(el =>
+  el.addEventListener('change', () => { if (btData) renderBacktest(btData); }));
+
+btModeSeg.addEventListener('click', e => {
+  const btn = e.target.closest('button');
+  if (!btn || btn.dataset.mode === btMode) return;
+  btMode = btn.dataset.mode;
+  [...btModeSeg.children].forEach(b => b.classList.toggle('active', b === btn));
+  if (btData) renderBacktest(btData);
+});
+
+async function loadBacktest(){
+  try {
+    const res = await fetch('/api/backtest/results');
+    btData = await res.json();
+  } catch (e) {
+    btStatus.textContent = 'Failed to load backtest results.';
+    return;
+  }
+  renderBacktest(btData);
+}
+
+function renderBacktest(data){
+  if (!data.meta){
+    btMeta.textContent = '';
+    btStats.innerHTML = '';
+    btStatus.textContent = '';
+    btBody.innerHTML = '<div class="empty">No backtest yet — pick a lookback and hit Run.</div>';
+    return;
+  }
+  const m = data.meta;
+  btMeta.textContent = `Last run ${m.run_at} · ${m.years}y lookback · ${m.n_tickers} tickers`;
+
+  const minMult = parseFloat(btMult.value), minAtr = parseFloat(btAtr.value);
+  const minVol = parseFloat(btVol.value);
+  let recs = data.records;
+  if (minMult) recs = recs.filter(r => r.body_mult !== null && r.body_mult >= minMult);
+  if (minAtr) recs = recs.filter(r => r.body_atr !== null && r.body_atr >= minAtr);
+  if (minVol) recs = recs.filter(r => r.vol_mult !== null && r.vol_mult >= minVol);
+  const sectors = new Set([...btChips.querySelectorAll('input:checked')].map(c => c.value));
+  if (sectors.size) recs = recs.filter(r => sectors.has(r.sector));
+
+  renderStats(recs, btStats);
+  const bulls = recs.filter(r => r.direction === 'BULLISH').length;
+  const shown = recs.slice(0, 500);
+  btStatus.innerHTML = `<b>${recs.length}</b>`
+    + (recs.length < data.records.length ? ` of ${data.records.length}` : '')
+    + ` historical signals — <b>${bulls}</b> bullish · <b>${recs.length - bulls}</b> bearish`
+    + (shown.length < recs.length
+        ? ` · table shows the most recent ${shown.length} (tiles use all)` : '');
+  btBody.innerHTML = recs.length
+    ? buildTable(shown, data.trackDays,
+        {mode: btMode, live: false, entryLabel: 'Close', tall: true, strength: true})
+    : '<div class="empty">No signals match these filters.</div>';
+}
+
+function runBacktest(){
+  if (btES) btES.close();
+  btRun.disabled = true;
+  btRun.textContent = 'Running…';
+  btProgress.classList.add('show');
+  btBar.style.width = '0%';
+  btCount.textContent = '0 / 0';
+  btCur.textContent = 'starting…';
+  btES = new EventSource('/api/backtest?years=' + btYears.value);
+  btES.onmessage = ev => {
+    const m = JSON.parse(ev.data);
+    if (m.type === 'busy'){
+      btStatus.textContent = 'A scan or backtest is already running — try again in a moment.';
+      btFinish(); return;
+    }
+    if (m.type === 'start'){
+      btCount.textContent = '0 / ' + m.total;
+    } else if (m.type === 'progress'){
+      btBar.style.width = (m.index / m.total * 100).toFixed(1) + '%';
+      btCount.textContent = m.index + ' / ' + m.total;
+      btCur.textContent = m.symbol + (m.found ? ` · ${m.found} found` : '');
+    } else if (m.type === 'done'){
+      btFinish();
+      loadBacktest();
+    }
+  };
+  btES.onerror = () => {
+    if (btRun.disabled) btStatus.textContent = 'Connection lost during the backtest.';
+    btFinish();
+  };
+}
+function btFinish(){
+  if (btES){ btES.close(); btES = null; }
+  btRun.disabled = false;
+  btRun.textContent = 'Run backtest';
+  btProgress.classList.remove('show');
+}
+btRun.addEventListener('click', runBacktest);
 </script>
 </body>
 </html>

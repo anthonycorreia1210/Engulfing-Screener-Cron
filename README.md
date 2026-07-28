@@ -32,13 +32,56 @@ python3 app.py
 # open http://127.0.0.1:5001
 ```
 
-Click **Run scan** to sweep the full `tickers.txt` watchlist, or type a
-comma-separated list into the box to scan just those. Manual runs ignore the
+Click **Run scan** to sweep the full `tickers.txt` watchlist, or check one or
+more sector chips (parsed from the `# --- Sector ---` headers in `tickers.txt`)
+to scan just those groups. Manual runs ignore the
 market-hours gate (that gate is only for the unattended cron), so you can re-run
 any time — a badge notes when the market is closed. Bullish hits show 🟢, bearish
 🔴, and any names overturned by the confirmed-open check are listed in a
 collapsible section. The scan loop is shared with the CLI (`scan_stream()` in
 `engulfing_scanner.py`), so the web app and cron can never drift apart.
+
+## History tab
+
+Every confirmed signal is recorded in `signals.db` (SQLite, gitignored) — once
+per symbol per trigger day, whether it fired from the cron or a market-hours
+web scan. The **History** tab shows each signal's forward performance: the
+cumulative % change from the *engulfing day's official close* to each
+subsequent trading day's close, for **10 trading days** (~2 weeks), after
+which the record is frozen — so +1d matches the next day's move as charted.
+The alert-time price is kept as *Entry* for reference (the close isn't known
+yet when the 3:30 PM scan records the signal; it's filled in by the next
+performance update). A *Live* column shows the current move for
+still-tracking signals while the market is open.
+
+The table toggles between **Cumulative** (running change since the trigger)
+and **Daily** (each day's individual move) views. Overview tiles up top show
+the typical cumulative move at +1/+3/+7/+10 days, split bullish/bearish —
+the headline is the **median** (robust to outliers like a microcap's −30%
+run) with the raw average and sample size beside it.
+
+Performance rows update lazily — the daily cron tops them up after each scan,
+and loading the History tab fills in anything missed. Trading-day offsets are
+labeled against SPY's calendar, so when Yahoo's daily feed drops a session for
+a symbol (2026-07-24 is still missing for PTEN) the row shows a gap at that
+offset instead of silently shifting every later column; the gap heals in place
+if the bar ever appears. Closed-market manual scans are shown in the UI but
+never recorded, since their prices are stale.
+
+## Backtest
+
+The **Backtest** tab (or `python3 backtest.py --years 5`) runs the same rule
+over years of daily bars for the whole watchlist and shows the same tiles and
+table, with hundreds-to-thousands of samples instead of a trickle. Results are
+stored in `signals.db` (`backtest_*` tables, replaced each run) and kept
+separate from the live record. Overview tiles (both tabs) show median, average,
+win rate, and sample size at +1/+3/+7/+10 days.
+
+Honest caveats, also shown in the tab: the alert-time price becomes the
+official close, the confirmed-open/missing-day guards can't be applied
+historically, flat prior days (high = low) are skipped as microcap noise, and
+only the current watchlist is tested — delisted names are invisible, so
+results skew optimistic.
 
 ## Test it
 
