@@ -3,12 +3,14 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Engulfing Screener</title>
+<title>BullPiggy</title>
+<link rel="icon" type="image/png" href="/static/logo.png">
 <style>
   :root{
     --bg:#0a0e14; --panel:#131a24; --panel2:#0f151d; --border:#223041;
     --text:#e6edf3; --muted:#8b98a5;
-    --green:#22c55e; --green-dim:#16351f; --red:#ef4444; --red-dim:#3a1a1c;
+    --green:#4aa873; --green-dim:#16351f; --red:#ef4444; --red-dim:#3a1a1c;
+    --brand-green:#3c905e; --brand-navy:#1b2936;
   }
   *{box-sizing:border-box}
   body{margin:0;background:var(--bg);color:var(--text);
@@ -16,12 +18,17 @@
     -webkit-font-smoothing:antialiased}
   .wrap{max-width:1000px;margin:0 auto;padding:32px 20px 80px}
   header{margin-bottom:24px}
-  h1{margin:0;font-size:24px;letter-spacing:-.02em}
-  .sub{color:var(--muted);margin-top:4px;font-size:14px}
+  .brand{display:flex;align-items:center;gap:14px}
+  .brand img{width:54px;height:auto}
+  .wordmark{margin:0;font-family:'Gilroy','Montserrat','Poppins',-apple-system,BlinkMacSystemFont,
+    'Segoe UI',sans-serif;font-weight:800;font-size:30px;letter-spacing:-.02em;line-height:1}
+  .wordmark .bull{color:var(--text)}
+  .wordmark .piggy{color:var(--brand-green)}
+  .sub{color:var(--muted);margin-top:8px;font-size:14px}
   .controls{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin:22px 0}
   button#run,button#btrun{appearance:none;border:none;border-radius:10px;padding:12px 22px;
     font-size:15px;font-weight:600;color:#04140a;cursor:pointer;
-    background:linear-gradient(180deg,#34d364,#22c55e);transition:transform .05s,filter .15s}
+    background:linear-gradient(180deg,#4fb87d,#3c905e);transition:transform .05s,filter .15s}
   button#run:hover,button#btrun:hover{filter:brightness(1.06)}
   button#run:active,button#btrun:active{transform:translateY(1px)}
   button#run:disabled,button#btrun:disabled{opacity:.55;cursor:not-allowed;filter:grayscale(.3)}
@@ -50,7 +57,7 @@
   .progress{display:none;margin:20px 0}
   .progress.show{display:block}
   .bar{height:8px;border-radius:999px;background:var(--panel);overflow:hidden;border:1px solid var(--border)}
-  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#22c55e,#34d364);transition:width .2s}
+  .bar>i{display:block;height:100%;width:0;background:linear-gradient(90deg,#3c905e,#4fb87d);transition:width .2s}
   .pmeta{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:8px}
   .pmeta .cur{color:var(--text);font-variant-numeric:tabular-nums}
 
@@ -68,6 +75,7 @@
   .pill{font-size:11px;font-weight:700;padding:4px 9px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em}
   .pill.bull{color:var(--green);background:var(--green-dim)}
   .pill.bear{color:var(--red);background:var(--red-dim)}
+  .stars{color:#f5c542;font-size:13px;letter-spacing:1px}
   .rows{display:grid;grid-template-columns:auto 1fr;gap:4px 14px;font-size:13px;font-variant-numeric:tabular-nums}
   .rows .k{color:var(--muted)}
   .rows .v{text-align:right}
@@ -124,8 +132,11 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>🕯️ Engulfing Screener</h1>
-    <div class="sub">Body engulfers — today's open &amp; close both clear the previous day's entire range.</div>
+    <div class="brand">
+      <img src="/static/logo.png" alt="BullPiggy logo">
+      <h1 class="wordmark"><span class="bull">Bull</span><span class="piggy">Piggy</span></h1>
+    </div>
+    <div class="sub">Engulfing screener — today's open &amp; close both clear the previous day's entire range.</div>
   </header>
 
   <nav class="tabs">
@@ -208,12 +219,6 @@
         <option value="1.5">Body ≥ 1.5× ATR20</option>
         <option value="2">Body ≥ 2× ATR20</option>
       </select>
-      <select id="btvol" title="Minimum trigger-day volume relative to its 20-day average">
-        <option value="0">Any volume</option>
-        <option value="1.5">Vol ≥ 1.5× avg</option>
-        <option value="2">Vol ≥ 2× avg</option>
-        <option value="3">Vol ≥ 3× avg</option>
-      </select>
       <span id="btmeta" class="meta"></span>
     </div>
 
@@ -266,9 +271,15 @@ function signalCard(s){
   const arrow = s.direction === 'BULLISH' ? '🟢' : '🔴';
   const el = document.createElement('div');
   el.className = 'card ' + dir;
+  const strength = s.body_mult
+    ? `<span class="k">Body</span><span class="v">${s.body_mult.toFixed(1)}× range`
+      + `${s.body_atr ? ' · ' + s.body_atr.toFixed(1) + '× ATR' : ''}</span>`
+    : '';
   el.innerHTML = `
     <div class="top">
-      <span class="sym">${arrow} ${s.symbol}</span>
+      <span class="sym">${arrow} ${s.symbol}
+        ${s.stars ? `<span class="stars" title="conviction tier ${s.tier} (backtested on bullish)">${s.stars}</span>` : ''}
+      </span>
       <span class="pill ${dir}">${s.direction}</span>
     </div>
     <div class="rows">
@@ -276,6 +287,7 @@ function signalCard(s){
       <span class="k">Prev H / L</span><span class="v">${fmt(s.prev_high)} / ${fmt(s.prev_low)}</span>
       <span class="k">Today open</span><span class="v">${fmt(s.today_open)}</span>
       <span class="k">Now</span><span class="v">${fmt(s.current_price)}</span>
+      ${strength}
     </div>`;
   return el;
 }
@@ -297,7 +309,7 @@ function startScan(){
   summary.textContent = 'Scanning…';
   results.append(summary, grid);
 
-  const rejected = [];
+  const rejected = [], cards = [];
   let signalCount = 0;
 
   const checked = [...document.querySelectorAll('#chips input:checked')].map(c => c.value);
@@ -321,13 +333,21 @@ function startScan(){
       barfill.style.width = pct.toFixed(1) + '%';
       pcount.textContent = m.index + ' / ' + m.total;
       pcur.textContent = 'scanning ' + m.symbol;
-      if (m.signal){ signalCount++; grid.appendChild(signalCard(m.signal)); }
+      if (m.signal){
+        signalCount++;
+        const el = signalCard(m.signal);
+        cards.push({tier: m.signal.tier || 0, bm: m.signal.body_mult || 0, el});
+        grid.appendChild(el);
+      }
       if (m.rejected) rejected.push(m.rejected);
       summary.innerHTML = signalCount
         ? '<b>' + signalCount + '</b> signal' + (signalCount===1?'':'s') + ' so far…'
         : 'Scanning… no signals yet';
     }
     else if (m.type === 'done'){
+      // Re-order cards by conviction: tier first, then body multiple.
+      cards.sort((a, b) => b.tier - a.tier || b.bm - a.bm);
+      cards.forEach(c => grid.appendChild(c.el));
       summary.innerHTML = m.count
         ? '<b>' + m.count + '</b> engulfing signal' + (m.count===1?'':'s')
           + ' · scanned at ' + m.finished
@@ -449,8 +469,7 @@ function renderStats(recs, el){
 function buildTable(recs, n, opts){
   let head = `<tr><th>Ticker</th><th>Signal</th><th>Triggered</th><th>${opts.entryLabel || 'Entry'}</th>`;
   if (opts.strength) head += '<th title="body ÷ prior day range">×Range</th>'
-    + '<th title="body ÷ 20-day ATR">×ATR</th>'
-    + '<th title="volume ÷ 20-day average volume">×Vol</th>';
+    + '<th title="body ÷ 20-day ATR">×ATR</th>';
   for (let i = 1; i <= n; i++) head += `<th>+${i}d</th>`;
   if (opts.live) head += '<th>Live</th>';
   head += '</tr>';
@@ -491,8 +510,7 @@ function buildTable(recs, n, opts){
     let strength = '';
     if (opts.strength){
       strength = `<td>${r.body_mult ? r.body_mult.toFixed(1) + '×' : '–'}</td>`
-        + `<td>${r.body_atr ? r.body_atr.toFixed(1) + '×' : '–'}</td>`
-        + `<td>${r.vol_mult ? r.vol_mult.toFixed(1) + '×' : '–'}</td>`;
+        + `<td>${r.body_atr ? r.body_atr.toFixed(1) + '×' : '–'}</td>`;
     }
     return `<tr><td class="sym">${r.symbol}</td>`
       + `<td><span class="pill ${dir}">${r.direction}</span></td>`
@@ -516,7 +534,7 @@ function renderHistory(data){
   histStatus.innerHTML = `<b>${recs.length}</b> signal${recs.length === 1 ? '' : 's'} recorded · `
     + `<b>${tracking}</b> still in the ${n}-day window`;
   renderStats(recs, histStats);
-  histBody.innerHTML = buildTable(recs, n, {mode, live: true});
+  histBody.innerHTML = buildTable(recs, n, {mode, live: true, strength: true});
 }
 
 // ---- Backtest tab ----
@@ -524,11 +542,11 @@ const btRun = $('#btrun'), btYears = $('#btyears'), btMeta = $('#btmeta');
 const btProgress = $('#btprogress'), btBar = $('#btbarfill');
 const btCount = $('#btpcount'), btCur = $('#btpcur');
 const btStats = $('#btstats'), btStatus = $('#btstatus'), btBody = $('#btbody');
-const btMult = $('#btmult'), btAtr = $('#btatr'), btVol = $('#btvol');
+const btMult = $('#btmult'), btAtr = $('#btatr');
 const btModeSeg = $('#btmodeseg'), btChips = $('#btchips');
 let btES = null, btData = null, btMode = 'cum';
 
-[btMult, btAtr, btVol, btChips].forEach(el =>
+[btMult, btAtr, btChips].forEach(el =>
   el.addEventListener('change', () => { if (btData) renderBacktest(btData); }));
 
 btModeSeg.addEventListener('click', e => {
@@ -562,11 +580,9 @@ function renderBacktest(data){
   btMeta.textContent = `Last run ${m.run_at} · ${m.years}y lookback · ${m.n_tickers} tickers`;
 
   const minMult = parseFloat(btMult.value), minAtr = parseFloat(btAtr.value);
-  const minVol = parseFloat(btVol.value);
   let recs = data.records;
   if (minMult) recs = recs.filter(r => r.body_mult !== null && r.body_mult >= minMult);
   if (minAtr) recs = recs.filter(r => r.body_atr !== null && r.body_atr >= minAtr);
-  if (minVol) recs = recs.filter(r => r.vol_mult !== null && r.vol_mult >= minVol);
   const sectors = new Set([...btChips.querySelectorAll('input:checked')].map(c => c.value));
   if (sectors.size) recs = recs.filter(r => sectors.has(r.sector));
 

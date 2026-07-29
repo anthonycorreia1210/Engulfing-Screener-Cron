@@ -57,8 +57,7 @@ CREATE TABLE IF NOT EXISTS backtest_signals (
     prev_high     REAL,
     prev_low      REAL,
     body_mult     REAL,
-    body_atr      REAL,
-    vol_mult      REAL
+    body_atr      REAL
 );
 CREATE TABLE IF NOT EXISTS backtest_performance (
     signal_id  INTEGER NOT NULL REFERENCES backtest_signals(id) ON DELETE CASCADE,
@@ -76,10 +75,19 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(backtest_signals)")}
-    for col in ("body_mult", "body_atr", "vol_mult"):
-        if col not in cols:
-            with conn:
-                conn.execute(f"ALTER TABLE backtest_signals ADD COLUMN {col} REAL")
+    if "vol_mult" in cols:
+        # Old schema from when volume was tracked (backtested: noise, not
+        # signal). Results are regenerated on every run, so just rebuild.
+        with conn:
+            conn.execute("DROP TABLE backtest_performance")
+            conn.execute("DROP TABLE backtest_signals")
+            conn.execute("DELETE FROM backtest_meta")
+        conn.executescript(_SCHEMA)
+    else:
+        for col in ("body_mult", "body_atr"):
+            if col not in cols:
+                with conn:
+                    conn.execute(f"ALTER TABLE backtest_signals ADD COLUMN {col} REAL")
     return conn
 
 
@@ -92,7 +100,6 @@ def find_signals(symbol: str, df) -> list[dict]:
     """
     o, h = df["Open"].to_list(), df["High"].to_list()
     l, c = df["Low"].to_list(), df["Close"].to_list()
-    v = df["Volume"].to_list()
     dates = [idx.date() for idx in df.index]
 
     # True range per bar, for the ATR-relative strength metric.
@@ -117,18 +124,12 @@ def find_signals(symbol: str, df) -> list[dict]:
         body = abs(c[i] - o[i])
         body_mult = body / (ph - pl)
         body_atr = None
-        vol_mult = None
         if i > 20:
             window = [t for t in tr[i - 20:i] if t is not None and math.isfinite(t)]
             if len(window) >= 15:
                 atr = sum(window) / len(window)
                 if atr > 0:
                     body_atr = body / atr
-            # Trigger-day volume vs its 20-day average (zero-volume days are
-            # data noise on illiquid names — excluded from the average).
-            vwindow = [x for x in v[i - 20:i] if math.isfinite(x) and x > 0]
-            if len(vwindow) >= 15 and math.isfinite(v[i]) and v[i] > 0:
-                vol_mult = v[i] / (sum(vwindow) / len(vwindow))
         days = []
         for k in range(1, TRACK_DAYS + 1):
             j = i + k
@@ -142,7 +143,7 @@ def find_signals(symbol: str, df) -> list[dict]:
                     "trigger_date": dates[i].isoformat(), "trigger_close": c[i],
                     "today_open": o[i], "prev_high": ph, "prev_low": pl,
                     "body_mult": body_mult, "body_atr": body_atr,
-                    "vol_mult": vol_mult, "days": days})
+                    "days": days})
     return out
 
 
@@ -195,12 +196,11 @@ def _save(signals: list[dict], years: int, n_tickers: int) -> None:
                 cur = conn.execute(
                     "INSERT INTO backtest_signals"
                     " (symbol, direction, trigger_date, trigger_close,"
-                    "  today_open, prev_high, prev_low, body_mult, body_atr,"
-                    "  vol_mult) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                    "  today_open, prev_high, prev_low, body_mult, body_atr)"
+                    " VALUES (?,?,?,?,?,?,?,?,?)",
                     (s["symbol"], s["direction"], s["trigger_date"],
                      s["trigger_close"], s["today_open"], s["prev_high"],
-                     s["prev_low"], s["body_mult"], s["body_atr"],
-                     s["vol_mult"]))
+                     s["prev_low"], s["body_mult"], s["body_atr"]))
                 conn.executemany(
                     "INSERT INTO backtest_performance VALUES (?,?,?,?,?)",
                     [(cur.lastrowid, d["day_offset"], d["date"], d["close"],
@@ -239,7 +239,6 @@ def get_backtest() -> dict:
                 "trigger_close": s["trigger_close"],
                 "body_mult": s["body_mult"],
                 "body_atr": s["body_atr"],
-                "vol_mult": s["vol_mult"],
                 "days": perf_by_sig.get(s["id"], []),
                 "complete": True,
             })
@@ -264,7 +263,8 @@ def _stat_line(rs: list[dict], direction: str, offsets=(1, 3, 7, 10)) -> str:
 
 
 def _bucket_block(rs: list[dict], direction: str, key: str, title: str,
-                  buckets: list[tuple], suffix: str = "") -> None:
+                  buckets: list[tuple], suffix: str = "",
+                  offsets=(3, 10)) -> None:
     print(f"  {title}")
     for lo, hi in buckets:
         sub = [r for r in rs if r[key] is not None and lo <= r[key] < hi]
@@ -273,7 +273,7 @@ def _bucket_block(rs: list[dict], direction: str, key: str, title: str,
         if not sub:
             print(f"    {label:<9} n=0")
             continue
-        print(f"    {label:<9} n={len(sub):<5} {_stat_line(sub, direction, (3, 10))}")
+        print(f"    {label:<9} n={len(sub):<5} {_stat_line(sub, direction, offsets)}")
 
 
 def print_summary() -> None:
@@ -297,9 +297,6 @@ def print_summary() -> None:
                       [(1.0, 1.5), (1.5, 2.0), (2.0, 3.0), (3.0, math.inf)], "x")
         _bucket_block(rs, direction, "body_atr", "by body / ATR20:",
                       [(0, 1.0), (1.0, 1.5), (1.5, 2.0), (2.0, math.inf)])
-        _bucket_block(rs, direction, "vol_mult", "by volume / 20d avg:",
-                      [(0, 1.0), (1.0, 1.5), (1.5, 2.0), (2.0, 3.0),
-                       (3.0, math.inf)], "x")
 
 
 def main() -> None:

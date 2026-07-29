@@ -57,9 +57,13 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     conn.executescript(_SCHEMA)
     cols = {r[1] for r in conn.execute("PRAGMA table_info(signals)")}
-    if "trigger_close" not in cols:
+    for col in ("trigger_close", "body_mult", "body_atr"):
+        if col not in cols:
+            with conn:
+                conn.execute(f"ALTER TABLE signals ADD COLUMN {col} REAL")
+    if "vol_mult" in cols:  # removed metric — the backtest showed only noise
         with conn:
-            conn.execute("ALTER TABLE signals ADD COLUMN trigger_close REAL")
+            conn.execute("ALTER TABLE signals DROP COLUMN vol_mult")
     return conn
 
 
@@ -77,11 +81,13 @@ def record_signal(symbol: str, direction: str, d: dict,
             cur = conn.execute(
                 "INSERT OR IGNORE INTO signals"
                 " (symbol, direction, trigger_date, trigger_price,"
-                "  today_open, prev_high, prev_low, prev_open, prev_close)"
-                " VALUES (?,?,?,?,?,?,?,?,?)",
+                "  today_open, prev_high, prev_low, prev_open, prev_close,"
+                "  body_mult, body_atr)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?)",
                 (symbol.upper(), direction, trigger_date, d["current_price"],
                  d.get("today_open"), d.get("prev_high"), d.get("prev_low"),
-                 d.get("prev_open"), d.get("prev_close")))
+                 d.get("prev_open"), d.get("prev_close"), d.get("body_mult"),
+                 d.get("body_atr")))
             return cur.rowcount > 0
     finally:
         conn.close()
@@ -208,6 +214,8 @@ def get_history() -> list[dict]:
                 "trigger_date": s["trigger_date"],
                 "trigger_price": s["trigger_price"],
                 "trigger_close": s["trigger_close"],
+                "body_mult": s["body_mult"],
+                "body_atr": s["body_atr"],
                 "days": [dict(p) for p in perf],
                 # Window is over once the final offset is filled; count can't
                 # be used — a permanently missing bar would leave it short.

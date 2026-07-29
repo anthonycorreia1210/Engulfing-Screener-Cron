@@ -25,11 +25,13 @@ import history
 from engulfing_scanner import (
     ET,
     SCRIPT_DIR,
+    conviction_tier,
     is_market_open_window,
     load_dotenv,
     load_tickers,
     load_tickers_by_sector,
     scan_stream,
+    stars,
 )
 
 load_dotenv(SCRIPT_DIR / ".env")
@@ -94,6 +96,7 @@ def scan():
                             history.record_signal(r["symbol"], r["signal"], d)
                         except Exception:
                             pass
+                    tier = conviction_tier(d)
                     item = {
                         "symbol": r["symbol"],
                         "direction": r["signal"],
@@ -103,6 +106,10 @@ def scan():
                         "prev_close": round(d["prev_close"], 2),
                         "prev_high": round(d["prev_high"], 2),
                         "prev_low": round(d["prev_low"], 2),
+                        "tier": tier,
+                        "stars": stars(tier),
+                        "body_mult": d.get("body_mult"),
+                        "body_atr": d.get("body_atr"),
                     }
                     signals.append(item)
                     msg["signal"] = item

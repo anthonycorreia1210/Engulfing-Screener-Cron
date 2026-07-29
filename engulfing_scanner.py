@@ -144,7 +144,8 @@ def get_candle_data(symbol: str) -> dict | None:
         tkr = yf.Ticker(symbol)
 
         # Daily bars: last row is today's partial bar during market hours.
-        daily = tkr.history(period="10d", interval="1d")
+        # 3 months so there are ~20 completed bars for the ATR baseline.
+        daily = tkr.history(period="3mo", interval="1d")
         if daily.empty or len(daily) < 2:
             return None
 
@@ -156,6 +157,7 @@ def get_candle_data(symbol: str) -> dict | None:
             prev_bar = daily.iloc[-2]
             prev_date = daily.index[-2].date()
             today_open = float(today_bar["Open"])
+            completed = daily.iloc[:-1]
         else:
             # Today's daily bar not present yet; get open from 1-min data.
             prev_bar = daily.iloc[-1]
@@ -164,6 +166,18 @@ def get_candle_data(symbol: str) -> dict | None:
             if intraday.empty:
                 return None
             today_open = float(intraday.iloc[0]["Open"])
+            completed = daily
+
+        # 20-day ATR from completed bars, for the conviction ranking
+        # (see conviction_tier).
+        atr20 = None
+        h = completed["High"].to_list()
+        l = completed["Low"].to_list()
+        c = completed["Close"].to_list()
+        trs = [max(h[i] - l[i], abs(h[i] - c[i - 1]), abs(l[i] - c[i - 1]))
+               for i in range(1, len(completed))][-20:]
+        if len(trs) >= 15:
+            atr20 = sum(trs) / len(trs)
 
         prev_high = float(prev_bar["High"])
         prev_low = float(prev_bar["Low"])
@@ -204,6 +218,7 @@ def get_candle_data(symbol: str) -> dict | None:
             "prev_close": prev_close,
             "today_open": today_open,
             "current_price": current_price,
+            "atr20": atr20,
         }
     except Exception as exc:
         print(f"  [warn] {symbol}: data error ({exc})", file=sys.stderr)
@@ -250,6 +265,45 @@ def check_engulfing(d: dict) -> str | None:
     return None
 
 
+def apply_strength(d: dict) -> None:
+    """
+    Attach conviction metrics to a candle dict (in place):
+      body_mult  today's body / previous day's range (>1 by definition here)
+      body_atr   today's body / 20-day ATR
+    (Volume was tested in the backtest and removed — it added noise, not
+    signal, and its apparent extremes flipped sign at longer horizons.)
+    """
+    body = abs(d["current_price"] - d["today_open"])
+    rng = d["prev_high"] - d["prev_low"]
+    d["body_mult"] = body / rng if rng > 0 else None
+    d["body_atr"] = body / d["atr20"] if d.get("atr20") else None
+
+
+def conviction_tier(d: dict) -> int:
+    """
+    0-3 ranking from the 5y backtest (validated on BULLISH signals; bearish
+    gets the same yardstick for consistency but showed no edge at any tier):
+      3  body >= 3x prior range AND >= 2x ATR20   (+10d med +2.3%, win 64%)
+      2  body >= 2x prior range                   (+10d med +0.7%, win 55%)
+      1  body >= 1.5x prior range
+      0  a trivial engulfer of a narrow day — no edge in the backtest
+    """
+    bm, ba = d.get("body_mult"), d.get("body_atr")
+    if not bm:
+        return 0
+    if bm >= 3 and (ba or 0) >= 2:
+        return 3
+    if bm >= 2:
+        return 2
+    if bm >= 1.5:
+        return 1
+    return 0
+
+
+def stars(tier: int) -> str:
+    return "★" * tier
+
+
 # ----------------------------------------------------------------------
 # Scan core (shared by the CLI and the web app)
 # ----------------------------------------------------------------------
@@ -285,6 +339,8 @@ def scan_stream(tickers: list[str], confirm: bool = True):
                     else:
                         rejected = {"confirmed": confirmed, "daily": d["today_open"]}
                         signal = None
+            if signal:
+                apply_strength(d)
         yield {"index": i, "total": total, "symbol": symbol,
                "signal": signal, "data": d, "rejected": rejected}
 
@@ -293,8 +349,17 @@ def scan_stream(tickers: list[str], confirm: bool = True):
 # Alerting
 # ----------------------------------------------------------------------
 def format_alert(symbol: str, direction: str, d: dict) -> str:
+    tier = conviction_tier(d)
+    prefix = f"{stars(tier)} " if tier else ""
+    strength = ""
+    if d.get("body_mult"):
+        strength = f"   Body: {d['body_mult']:.1f}× prior range"
+        if d.get("body_atr"):
+            strength += f" | {d['body_atr']:.1f}× ATR20"
+        strength += "\n"
     return (
-        f"{'🔴' if direction == 'BEARISH' else '🟢'} {direction} Engulfing on {symbol}\n"
+        f"{prefix}{'🔴' if direction == 'BEARISH' else '🟢'} {direction} Engulfing on {symbol}\n"
+        f"{strength}"
         f"   Prev O/C: {d['prev_open']:.2f}/{d['prev_close']:.2f} | "
         f"Prev H/L: {d['prev_high']:.2f}/{d['prev_low']:.2f}\n"
         f"   Today Open: {d['today_open']:.2f} | Now: {d['current_price']:.2f}"
@@ -385,7 +450,6 @@ def main() -> None:
     now_str = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
     print(f"Scanning {len(tickers)} tickers at {now_str}\n")
 
-    alerts = []
     hits = []
     for r in scan_stream(tickers):
         d, signal, symbol = r["data"], r["signal"], r["symbol"]
@@ -396,11 +460,17 @@ def main() -> None:
             note = (f"  [rejected: confirmed open {r['rejected']['confirmed']:.2f}, "
                     f"daily bar said {r['rejected']['daily']:.2f}]")
         status = signal if signal else "no signal"
+        if signal and d.get("body_mult"):
+            status += f" {stars(conviction_tier(d))} ({d['body_mult']:.1f}×R)"
         print(f"  {symbol:<6} open {d['today_open']:.2f}  now {d['current_price']:.2f}  "
               f"prevH {d['prev_high']:.2f}  prevL {d['prev_low']:.2f}  -> {status}{note}")
         if signal:
-            alerts.append(format_alert(symbol, signal, d))
             hits.append((symbol, signal, d))
+
+    # Highest conviction first: tier, then raw body multiple.
+    hits.sort(key=lambda t: (conviction_tier(t[2]), t[2].get("body_mult") or 0),
+              reverse=True)
+    alerts = [format_alert(sym, sig, d) for sym, sig, d in hits]
 
     if alerts:
         body = f"Engulfing Scanner — {now_str}\n\n" + "\n\n".join(alerts)

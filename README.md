@@ -49,6 +49,8 @@ web scan. The **History** tab shows each signal's forward performance: the
 cumulative % change from the *engulfing day's official close* to each
 subsequent trading day's close, for **10 trading days** (~2 weeks), after
 which the record is frozen — so +1d matches the next day's move as charted.
+(A +20d horizon was tested in the backtest and removed: the edge is fully
+earned within ~10 trading days, and days 10–20 added only market drift.)
 The alert-time price is kept as *Entry* for reference (the close isn't known
 yet when the 3:30 PM scan records the signal; it's filled in by the next
 performance update). A *Live* column shows the current move for
@@ -158,3 +160,16 @@ doesn't exist, so there's no error trail. Confirm a run with `tail scanner.log`.
   report against the final prices. Add a 10:30 AM PT entry if you want to
   cover them.
 - Alerts are marked 🟢 for bullish and 🔴 for bearish.
+- **Conviction ranking.** Every signal gets a 0–3 star tier from the 5-year
+  backtest and alerts are sorted highest-conviction first (web scan cards
+  re-order the same way when the scan finishes):
+  - ★★★ body ≥ 3× the prior day's range AND ≥ 2× the stock's 20-day ATR
+    (backtest: +10d median +2.3%, 64% win)
+  - ★★ body ≥ 2× prior range · ★ body ≥ 1.5× · unstarred = trivial engulfer,
+    no backtested edge
+  - Tiers were validated on **bullish** signals; bearish signals show the same
+    stars for reference but had no edge at any tier (they historically resolve
+    upward — treat bearish alerts as informational for now).
+  Strength metrics (body ×range, ×ATR20) are recorded with every signal in
+  `signals.db` and shown in the History table. (Volume relative to its 20-day
+  average was also backtested and dropped — noise, not signal.)
