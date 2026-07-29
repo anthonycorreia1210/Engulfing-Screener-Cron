@@ -133,6 +133,41 @@ If you move the project, update the paths in `crontab.txt` and re-run `crontab c
 A path mismatch fails silently — cron can't even write `scanner.log` if its directory
 doesn't exist, so there's no error trail. Confirm a run with `tail scanner.log`.
 
+## Deployment (bullpiggy.com)
+
+The site is served **from this Mac** via a Cloudflare Tunnel — Cloudflare is
+the front door (DNS, TLS, auth), not the host. If the Mac is asleep or off,
+the site is down. Set System Settings → Energy → prevent sleep on power for
+reliability, or migrate the whole stack to a small VPS for true 24/7.
+
+Architecture: browser → Cloudflare edge (bullpiggy.com, TLS, Access login) →
+`cloudflared` tunnel → Flask app on `127.0.0.1:5001`.
+
+Pieces (all outside this repo):
+
+- **DNS**: bullpiggy.com zone on Cloudflare (registrar: GoDaddy, nameservers
+  `elly`/`fred.ns.cloudflare.com`). Apex is a CNAME to the tunnel; `www` is a
+  CNAME to the apex.
+- **Tunnel**: named `bullpiggy`. Config in `~/.cloudflared/config.yml`
+  (ingress: apex + www → `http://127.0.0.1:5001`), credentials JSON alongside
+  it. Manage with `cloudflared tunnel list|info|route`.
+- **Auto-start**: two LaunchAgents in `~/Library/LaunchAgents/`:
+  - `com.bullpiggy.app.plist` — runs `venv/bin/python app.py`
+  - `com.bullpiggy.tunnel.plist` — runs `cloudflared tunnel run bullpiggy`
+  Both RunAtLoad + KeepAlive; logs in `~/Library/Logs/bullpiggy-*.log`.
+  Restart one with `launchctl kickstart -k gui/$UID/com.bullpiggy.app`.
+  (Don't use `brew services start cloudflared` — it launches cloudflared
+  without the `tunnel run` subcommand and silently does nothing.)
+- **Auth**: Cloudflare Access (Zero Trust team `proud-mode-9523`) — a
+  self-hosted app covering both hostnames with an Allow policy for a single
+  email, one-time PIN login. Without it the app is wide open (it has no auth
+  of its own); never expose it publicly unprotected.
+
+To rebuild from scratch: add the zone to Cloudflare → point nameservers →
+`cloudflared tunnel login` → `tunnel create bullpiggy` →
+`tunnel route dns bullpiggy bullpiggy.com` → write config.yml → install the
+two LaunchAgents → re-create the Access app.
+
 ## Notes
 
 - Data comes from Yahoo Finance via `yfinance` (free, no API key). Quotes can
