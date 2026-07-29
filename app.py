@@ -200,4 +200,9 @@ def backtest_results():
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001, threaded=True, debug=False)
+    # Auto-reload code/templates on change (dev convenience), but keep the
+    # werkzeug debugger OFF — it allows code execution and must never be on
+    # if this app is ever exposed beyond localhost.
+    app.config["TEMPLATES_AUTO_RELOAD"] = True
+    app.run(host="127.0.0.1", port=5001, threaded=True, debug=False,
+            use_reloader=True)
