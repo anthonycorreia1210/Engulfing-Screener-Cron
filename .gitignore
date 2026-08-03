@@ -12,3 +12,6 @@ signals.db
 
 # macOS
 .DS_Store
+
+# Paper trader runtime output
+paper.log

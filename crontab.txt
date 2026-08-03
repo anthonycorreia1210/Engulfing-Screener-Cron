@@ -3,3 +3,9 @@
 # Install / update:   crontab /Users/anthonycorreia/code/engulfing/crontab.txt
 # Verify:             crontab -l
 30 12 * * 1-5 /Users/anthonycorreia/code/engulfing/venv/bin/python /Users/anthonycorreia/code/engulfing/engulfing_scanner.py >> /Users/anthonycorreia/code/engulfing/scanner.log 2>&1
+# Paper trader — 10 min after the scan: reconciles fills, exits due positions,
+# then buys calls on today's starred bullish signals (Alpaca paper account).
+40 12 * * 1-5 /Users/anthonycorreia/code/engulfing/venv/bin/python /Users/anthonycorreia/code/engulfing/paper_trader.py >> /Users/anthonycorreia/code/engulfing/paper.log 2>&1
+# Chase pass — 4 min before the close: still-unfilled orders become marketable
+# limits (entries: 3-star signals only; exits: all, to keep the +10td schedule).
+56 12 * * 1-5 /Users/anthonycorreia/code/engulfing/venv/bin/python /Users/anthonycorreia/code/engulfing/paper_trader.py --chase >> /Users/anthonycorreia/code/engulfing/paper.log 2>&1

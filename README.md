@@ -85,6 +85,47 @@ historically, flat prior days (high = low) are skipped as microcap noise, and
 only the current watchlist is tested — delisted names are invisible, so
 results skew optimistic.
 
+## Paper trading (Alpaca)
+
+Every starred **bullish** signal is automatically traded as a **long call** on
+an Alpaca **paper** account, so the strategy can prove itself with fake money
+and real market prices before any real dollars are used. The rules:
+
+- Contract: ~30–45 DTE (widened to 25–60 if the window is empty), delta ≈ 0.65,
+  two-sided quote required, spreads over 60% of mid skipped as illiquid.
+- Entry: DAY **limit order at the quote mid**, placed ~20 min before the close.
+  No fill by the bell → recorded as *unfilled* (a missed fill is data too).
+- Chase pass (~4 min before the close): still-unfilled **★★★ entries** are
+  replaced with marketable limits (ask + 5%) so the highest-conviction trades
+  execute even when the mid runs away; ★/★★ entries stay mid-or-miss. Unfilled
+  **exit** orders are chased at any tier — the +10-day exit schedule is part
+  of the strategy, so paying the spread beats selling a day late. Chased
+  orders are flagged in the ledger's note column.
+- Sizing: ~10% of paper equity per trade, minimum 1 contract, hard skip if one
+  contract would cost more than 30% of equity.
+- Exit: sell to close on the **10th trading day** after the trigger (the
+  backtested edge window) — limit at mid first, market order the next run if
+  that expires. A near-expiry guard exits early if expiry is within 5 days.
+
+Set `ALPACA_PAPER_KEY` / `ALPACA_PAPER_SECRET` in `.env` (paper keys from the
+Alpaca dashboard — the account needs no funding). The cron runs
+`paper_trader.py` 10 minutes after each scan (see `crontab.txt`); it
+reconciles yesterday's fills, exits due positions, then enters today's
+signals. The ledger lives in `signals.db` (`paper_trades`) and the **Paper**
+tab shows equity, open positions marked to the current mid, and realized
+P&L with win rate.
+
+```bash
+python3 paper_trader.py --dry-run   # show what would be traded, place nothing
+python3 paper_trader.py --status    # print the trade ledger
+```
+
+Honesty caveats: Alpaca paper fills are idealized (no queue, fills at the
+NBBO touch on the free indicative feed), so results are an **upper bound** on
+live performance. Bearish signals are never traded (no backtested edge), and
+signals recorded by closed-market manual scans don't exist in the DB, so they
+can't be traded either.
+
 ## Test it
 
 ```bash

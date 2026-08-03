@@ -222,7 +222,6 @@ XE
 YSS
 
 # --- Energy (12) ---
-CCJ
 COP
 CVX
 HAL

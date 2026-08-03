@@ -22,6 +22,7 @@ from flask import Flask, Response, render_template, request
 
 import backtest
 import history
+import paper_trader
 from engulfing_scanner import (
     ET,
     SCRIPT_DIR,
@@ -184,6 +185,13 @@ def run_backtest():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/api/paper")
+def api_paper():
+    # Reconciles outstanding orders against Alpaca, marks open positions to
+    # the current mid, and returns the full ledger + account snapshot.
+    return paper_trader.web_summary()
 
 
 @app.route("/api/backtest/results")
