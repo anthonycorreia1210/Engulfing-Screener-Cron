@@ -472,19 +472,12 @@ def main() -> None:
               reverse=True)
     alerts = [format_alert(sym, sig, d) for sym, sig, d in hits]
 
-    if alerts:
-        body = f"Engulfing Scanner — {now_str}\n\n" + "\n\n".join(alerts)
-        print("\n" + "=" * 50 + "\nALERTS\n" + "=" * 50 + "\n" + body)
-        subject = f"Engulfing Alert: {len(alerts)} signal(s)"
-        send_email(subject, body)
-        send_ntfy(subject, body)
-        send_telegram(body)
-    else:
-        print("\nNo engulfing setups found.")
-
-    # Persist today's confirmed signals and refresh forward performance for
-    # earlier ones. Real runs only — dry-run can fire on stale, closed-market
-    # prices that would pollute the record.
+    # Persist FIRST — the paper trader and History tab feed off the DB, so
+    # recording must never be hostage to an alert-channel failure (2026-08-03:
+    # Railway blocks outbound SMTP; the email crash silently dropped the day's
+    # signals AND the downstream ntfy/telegram pushes). Real runs only —
+    # dry-run can fire on stale, closed-market prices that would pollute the
+    # record.
     if not args.dry_run:
         try:
             for symbol, signal, d in hits:
@@ -494,6 +487,21 @@ def main() -> None:
                 print(f"[history] {n} performance row(s) added")
         except Exception as exc:
             print(f"  [warn] history update failed ({exc})", file=sys.stderr)
+
+    if alerts:
+        body = f"Engulfing Scanner — {now_str}\n\n" + "\n\n".join(alerts)
+        print("\n" + "=" * 50 + "\nALERTS\n" + "=" * 50 + "\n" + body)
+        subject = f"Engulfing Alert: {len(alerts)} signal(s)"
+        # Each channel is independent: one failing must not mute the others.
+        for channel in (lambda: send_email(subject, body),
+                        lambda: send_ntfy(subject, body),
+                        lambda: send_telegram(body)):
+            try:
+                channel()
+            except Exception as exc:
+                print(f"  [warn] alert channel failed ({exc})", file=sys.stderr)
+    else:
+        print("\nNo engulfing setups found.")
 
 
 if __name__ == "__main__":
