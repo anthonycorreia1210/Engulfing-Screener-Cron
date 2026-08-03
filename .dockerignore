@@ -1,0 +1,10 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.env
+signals.db
+scanner.log
+paper.log
+.DS_Store
+.claude/

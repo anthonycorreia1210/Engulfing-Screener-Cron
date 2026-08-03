@@ -1,0 +1,6 @@
+# Container crontab (supercronic) — times are ET; the image sets TZ=America/New_York.
+# The Mac crontab.txt ran these at 12:30/12:40/12:56 PT = 3:30/3:40/3:56 ET.
+# Output goes to stdout → Railway logs (no file redirects).
+30 15 * * 1-5 python /app/engulfing_scanner.py
+40 15 * * 1-5 python /app/paper_trader.py
+56 15 * * 1-5 python /app/paper_trader.py --chase

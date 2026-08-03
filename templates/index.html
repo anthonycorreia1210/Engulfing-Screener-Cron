@@ -3,22 +3,23 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>BullPiggy</title>
+<title>Engulfing Candle Screener · BullPiggy</title>
 <meta name="description" content="Engulfing candle screener — conviction-ranked signals, live history, and a 5-year backtest.">
 <meta name="theme-color" content="#0a0e14">
-<link rel="icon" type="image/png" href="/static/favicon.png">
-<link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+<link rel="icon" type="image/png" href="static/favicon.png">
+<link rel="apple-touch-icon" href="static/apple-touch-icon.png">
+<link rel="canonical" href="https://bullpiggy.com/engulfing-candles/">
 <meta property="og:site_name" content="BullPiggy">
-<meta property="og:title" content="BullPiggy">
+<meta property="og:title" content="Engulfing Candle Screener — BullPiggy">
 <meta property="og:description" content="Engulfing candle screener — conviction-ranked signals, live history, and a 5-year backtest.">
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://bullpiggy.com">
-<meta property="og:image" content="https://bullpiggy.com/static/og-card.png">
+<meta property="og:url" content="https://bullpiggy.com/engulfing-candles/">
+<meta property="og:image" content="https://bullpiggy.com/engulfing-candles/static/og-card.png">
 <meta property="og:image:width" content="1200">
 <meta property="og:image:height" content="630">
 <meta name="twitter:card" content="summary_large_image">
-<meta name="twitter:title" content="BullPiggy">
-<meta name="twitter:image" content="https://bullpiggy.com/static/og-card.png">
+<meta name="twitter:title" content="Engulfing Candle Screener — BullPiggy">
+<meta name="twitter:image" content="https://bullpiggy.com/engulfing-candles/static/og-card.png">
 <style>
   :root{
     --bg:#0a0e14; --panel:#131a24; --panel2:#0f151d; --border:#223041;
@@ -147,7 +148,7 @@
 <div class="wrap">
   <header>
     <div class="brand">
-      <img src="/static/logo-light.png" alt="BullPiggy logo">
+      <img src="static/logo-light.png" alt="BullPiggy logo">
       <h1 class="wordmark"><span class="bull">Bull</span><span class="piggy">Piggy</span></h1>
     </div>
     <div class="sub">Engulfing screener — today's open &amp; close both clear the previous day's entire range.</div>
@@ -157,6 +158,7 @@
     <button class="tab active" id="tab-scan">Scanner</button>
     <button class="tab" id="tab-history">History</button>
     <button class="tab" id="tab-backtest">Backtest</button>
+    <button class="tab" id="tab-paper">Paper</button>
   </nav>
 
   <div id="view-scan">
@@ -208,6 +210,23 @@
       reference. Signals are tracked for <b>10 trading days</b> (~2 weeks), then frozen. <i>Live</i> shows
       the current move for still-tracking signals while the market is open. Colors reflect price
       direction, not win/loss — a bearish signal "wants" red.
+    </div>
+  </div>
+
+  <div id="view-paper" hidden>
+    <div class="stats" id="pastats"></div>
+    <div class="histbar">
+      <div class="summary" id="pastatus">Loading…</div>
+    </div>
+    <div id="pabody"></div>
+    <div class="histnote">
+      Every starred <b>bullish</b> signal is auto-bought as a long call on an
+      <b>Alpaca paper account</b> (~30–45 DTE, delta ≈ 0.65, limit at mid, ~10% of
+      equity per trade) and sold on the <b>10th trading day</b> after the trigger —
+      the backtested edge window. Entry orders that don't fill by the close are
+      recorded as <i>unfilled</i>; signals with no viable contract are <i>skipped</i>.
+      Paper fills are idealized (no queue, indicative feed), so treat results as an
+      upper bound on live performance.
     </div>
   </div>
 
@@ -327,7 +346,7 @@ function startScan(){
   let signalCount = 0;
 
   const checked = [...document.querySelectorAll('#chips input:checked')].map(c => c.value);
-  const url = '/api/scan' + (checked.length ? '?sectors=' + encodeURIComponent(checked.join(',')) : '');
+  const url = 'api/scan' + (checked.length ? '?sectors=' + encodeURIComponent(checked.join(',')) : '');
   es = new EventSource(url);
 
   es.onmessage = ev => {
@@ -413,6 +432,7 @@ const views = {
   scan:     {tab: $('#tab-scan'),     view: $('#view-scan')},
   history:  {tab: $('#tab-history'),  view: $('#view-history'),  onshow: () => loadHistory()},
   backtest: {tab: $('#tab-backtest'), view: $('#view-backtest'), onshow: () => loadBacktest()},
+  paper:    {tab: $('#tab-paper'),    view: $('#view-paper'),    onshow: () => loadPaper()},
 };
 function showTab(name){
   for (const [k, v] of Object.entries(views)){
@@ -447,7 +467,7 @@ async function loadHistory(){
   histBody.innerHTML = '';
   histStats.innerHTML = '';
   try {
-    const res = await fetch('/api/history');
+    const res = await fetch('api/history');
     histData = await res.json();
   } catch (e) {
     histStatus.textContent = 'Failed to load history. Is the server still running?';
@@ -551,6 +571,87 @@ function renderHistory(data){
   histBody.innerHTML = buildTable(recs, n, {mode, live: true, strength: true});
 }
 
+// ---- Paper tab ----
+const paStats = $('#pastats'), paStatus = $('#pastatus'), paBody = $('#pabody');
+
+async function loadPaper(){
+  paStatus.textContent = 'Loading… (reconciling orders with Alpaca)';
+  try {
+    const res = await fetch('api/paper');
+    renderPaper(await res.json());
+  } catch (e) {
+    paStatus.textContent = 'Failed to load paper trades. Is the server still running?';
+  }
+}
+
+function money(n){ return (n < 0 ? '-$' : '$') + Math.abs(n).toLocaleString(undefined, {maximumFractionDigits: 0}); }
+
+function renderPaper(data){
+  if (!data.enabled){
+    paStats.innerHTML = '';
+    paStatus.textContent = 'Paper trading is not configured.';
+    paBody.innerHTML = '<div class="empty">Set ALPACA_PAPER_KEY / ALPACA_PAPER_SECRET in .env to enable.</div>';
+    return;
+  }
+  const trades = data.trades;
+  const open = trades.filter(t => ['open','exit_pending','submitted'].includes(t.status));
+  const closed = trades.filter(t => t.status === 'closed');
+  const wins = closed.filter(t => (t.pnl ?? 0) > 0).length;
+  const realized = closed.reduce((a, t) => a + (t.pnl || 0), 0);
+  const unreal = open.reduce((a, t) => a + (t.unreal_pnl || 0), 0);
+  const pcts = closed.map(t => t.pnl_pct).filter(p => p !== null && p !== undefined);
+
+  paStats.innerHTML = `
+    <div class="stat"><div class="h">Account equity</div>
+      <div class="row"><span class="val">${data.account ? money(data.account.equity) : '–'}</span>
+      <span class="sub">paper</span></div></div>
+    <div class="stat"><div class="h">Open positions</div>
+      <div class="row"><span class="val">${open.length}</span>
+      <span class="sub">unrealized <span class="${unreal >= 0 ? 'pos' : 'neg'}">${money(unreal)}</span></span></div></div>
+    <div class="stat"><div class="h">Closed trades</div>
+      <div class="row"><span class="val">${closed.length}</span>
+      <span class="sub">${closed.length ? 'win ' + Math.round(wins / closed.length * 100) + '%' + (pcts.length ? ' · med ' + pctf(median(pcts)) : '') : 'none yet'}</span></div></div>
+    <div class="stat"><div class="h">Realized P&amp;L</div>
+      <div class="row"><span class="val ${realized >= 0 ? 'pos' : 'neg'}">${money(realized)}</span>
+      <span class="sub">closed trades only</span></div></div>`;
+
+  if (!trades.length){
+    paStatus.textContent = 'No paper trades yet.';
+    paBody.innerHTML = '<div class="empty">Trades appear here when a starred bullish signal fires during market hours.</div>';
+    return;
+  }
+  paStatus.innerHTML = `<b>${trades.length}</b> trade${trades.length === 1 ? '' : 's'} · `
+    + `<b>${open.length}</b> open · <b>${closed.length}</b> closed · exit after ${data.exitAfter} trading days`;
+
+  const rows = trades.map(t => {
+    const c = t.contract
+      ? `${t.expiry} $${t.strike}C${t.delta ? ' Δ' + t.delta.toFixed(2) : ''}`
+      : '–';
+    let out = '<td class="dim">–</td>', pl = '<td class="dim">–</td>';
+    if (t.status === 'closed' && t.exit_price !== null){
+      out = `<td>${fmt(t.exit_price)}</td>`;
+      pl = pctCell(t.pnl_pct, '', money(t.pnl));
+    } else if (t.mark !== undefined){
+      out = `<td class="live" title="current mid">${fmt(t.mark)}</td>`;
+      pl = pctCell(t.unreal_pct, 'live', money(t.unreal_pnl) + ' unrealized');
+    }
+    return `<tr><td class="sym">${t.symbol}</td>`
+      + `<td><span class="stars">${'★'.repeat(t.tier || 0) || '–'}</span></td>`
+      + `<td>${t.trigger_date}</td><td>${c}</td>`
+      + `<td>${t.qty ?? '–'}</td>`
+      + `<td>${t.entry_price !== null && t.entry_price !== undefined ? fmt(t.entry_price) : (t.entry_limit ? fmt(t.entry_limit) + '?' : '–')}</td>`
+      + out + pl
+      + `<td>${t.exit_due || '–'}</td>`
+      + `<td>${t.status}${t.note ? ` <span class="dim" title="${t.note}">ⓘ</span>` : ''}</td></tr>`;
+  }).join('');
+
+  paBody.innerHTML = '<div class="histwrap tall"><table class="hist"><thead>'
+    + '<tr><th>Ticker</th><th>Tier</th><th>Triggered</th><th>Contract</th><th>Qty</th>'
+    + '<th>Entry</th><th title="exit fill, or current mid for open positions">Exit / Mark</th>'
+    + '<th>P&amp;L</th><th>Exit due</th><th>Status</th></tr>'
+    + `</thead><tbody>${rows}</tbody></table></div>`;
+}
+
 // ---- Backtest tab ----
 const btRun = $('#btrun'), btYears = $('#btyears'), btMeta = $('#btmeta');
 const btProgress = $('#btprogress'), btBar = $('#btbarfill');
@@ -573,7 +674,7 @@ btModeSeg.addEventListener('click', e => {
 
 async function loadBacktest(){
   try {
-    const res = await fetch('/api/backtest/results');
+    const res = await fetch('api/backtest/results');
     btData = await res.json();
   } catch (e) {
     btStatus.textContent = 'Failed to load backtest results.';
@@ -622,7 +723,7 @@ function runBacktest(){
   btBar.style.width = '0%';
   btCount.textContent = '0 / 0';
   btCur.textContent = 'starting…';
-  btES = new EventSource('/api/backtest?years=' + btYears.value);
+  btES = new EventSource('api/backtest?years=' + btYears.value);
   btES.onmessage = ev => {
     const m = JSON.parse(ev.data);
     if (m.type === 'busy'){

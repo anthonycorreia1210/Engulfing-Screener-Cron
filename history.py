@@ -15,6 +15,7 @@ is kept as trigger_price for reference only. The close isn't known when the
 signal is recorded, so trigger_close is filled in by the first performance
 update afterward.
 """
+import os
 import sqlite3
 import sys
 from datetime import date, datetime, timedelta
@@ -24,7 +25,8 @@ from zoneinfo import ZoneInfo
 import yfinance as yf
 
 ET = ZoneInfo("America/New_York")
-DB_PATH = Path(__file__).resolve().parent / "signals.db"
+# SIGNALS_DB overrides for deployments where the DB lives on a mounted volume.
+DB_PATH = Path(os.environ.get("SIGNALS_DB") or Path(__file__).resolve().parent / "signals.db")
 TRACK_DAYS = 10  # trading days ~= 2 calendar weeks
 
 _SCHEMA = """

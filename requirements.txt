@@ -1,2 +1,4 @@
 yfinance
 flask
+alpaca-py
+gunicorn
