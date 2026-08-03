@@ -194,7 +194,9 @@ def api_paper():
     return paper_trader.web_summary()
 
 
-@app.route("/api/backtest/results")
+# NOT nested under /api/backtest: the Access owner-gate on the trigger
+# endpoint matches by path prefix, and stored results must stay public.
+@app.route("/api/backtest-results")
 def backtest_results():
     data = backtest.get_backtest()
     data["trackDays"] = history.TRACK_DAYS

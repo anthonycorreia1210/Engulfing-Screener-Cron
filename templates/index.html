@@ -348,8 +348,10 @@ function startScan(){
   const checked = [...document.querySelectorAll('#chips input:checked')].map(c => c.value);
   const url = 'api/scan' + (checked.length ? '?sectors=' + encodeURIComponent(checked.join(',')) : '');
   es = new EventSource(url);
+  let gotEvent = false;
 
   es.onmessage = ev => {
+    gotEvent = true;
     const m = JSON.parse(ev.data);
     if (m.type === 'busy'){
       summary.innerHTML = 'A scan is already running — try again in a moment.';
@@ -400,7 +402,11 @@ function startScan(){
     if (runBtn.disabled){
       const e = document.createElement('div');
       e.className = 'err';
-      e.textContent = 'Connection lost before the scan finished. Is the server still running?';
+      // An error before ANY event = the request never reached the app —
+      // on the public site that's the owner-only gate, not an outage.
+      e.textContent = gotEvent
+        ? 'Connection lost before the scan finished. Is the server still running?'
+        : 'Running live scans is owner-only. The signal history and backtest results tabs are public.';
       results.appendChild(e);
     }
     finish();
@@ -580,7 +586,7 @@ async function loadPaper(){
     const res = await fetch('api/paper');
     renderPaper(await res.json());
   } catch (e) {
-    paStatus.textContent = 'Failed to load paper trades. Is the server still running?';
+    paStatus.textContent = 'The paper-trading ledger is owner-only.';
   }
 }
 
@@ -674,7 +680,7 @@ btModeSeg.addEventListener('click', e => {
 
 async function loadBacktest(){
   try {
-    const res = await fetch('api/backtest/results');
+    const res = await fetch('api/backtest-results');
     btData = await res.json();
   } catch (e) {
     btStatus.textContent = 'Failed to load backtest results.';
@@ -724,7 +730,9 @@ function runBacktest(){
   btCount.textContent = '0 / 0';
   btCur.textContent = 'starting…';
   btES = new EventSource('api/backtest?years=' + btYears.value);
+  let btGotEvent = false;
   btES.onmessage = ev => {
+    btGotEvent = true;
     const m = JSON.parse(ev.data);
     if (m.type === 'busy'){
       btStatus.textContent = 'A scan or backtest is already running — try again in a moment.';
@@ -742,7 +750,9 @@ function runBacktest(){
     }
   };
   btES.onerror = () => {
-    if (btRun.disabled) btStatus.textContent = 'Connection lost during the backtest.';
+    if (btRun.disabled) btStatus.textContent = btGotEvent
+      ? 'Connection lost during the backtest.'
+      : 'Running fresh backtests is owner-only — the stored results below are public.';
     btFinish();
   };
 }
