@@ -162,8 +162,10 @@ zone doesn't observe DST (e.g., Arizona).
 
 Install with `crontab -e`, paste the line, save.
 
-**Or use the checked-in `crontab.txt`** (source of truth for this machine — absolute
-paths, since cron has no PATH or cwd):
+**Or use the checked-in `crontab.txt`** (historical — the production crons now run
+in the Railway container via `crontab.railway`; only install this locally if you're
+running the scanner off-cloud, and never alongside prod, or the paper account gets
+double-traded):
 
 ```bash
 crontab crontab.txt   # install / update
@@ -176,38 +178,58 @@ doesn't exist, so there's no error trail. Confirm a run with `tail scanner.log`.
 
 ## Deployment (bullpiggy.com)
 
-The site is served **from this Mac** via a Cloudflare Tunnel — Cloudflare is
-the front door (DNS, TLS, auth), not the host. If the Mac is asleep or off,
-the site is down. Set System Settings → Energy → prevent sleep on power for
-reliability, or migrate the whole stack to a small VPS for true 24/7.
+The site runs on **Railway** (project `bullpiggy`, personal workspace under
+anthonycorreia1210@gmail.com), behind Cloudflare as the front door
+(DNS, TLS, path-scoped Access auth). The Mac is no longer in the serving
+path — the old tunnel/LaunchAgent setup was decommissioned 2026-08-02
+(plists backed up in `~/bullpiggy-mac-decommission-backup/`).
 
-Architecture: browser → Cloudflare edge (bullpiggy.com, TLS, Access login) →
-`cloudflared` tunnel → Flask app on `127.0.0.1:5001`.
+Architecture: browser → Cloudflare edge (TLS, Access on owner-only paths) →
+Railway `edge` service (Caddy path-router) → this app.
 
-Pieces (all outside this repo):
+```
+bullpiggy.com/                    → static hub page (edge service)
+bullpiggy.com/engulfing-candles/* → `engulfing` service (this repo; prefix
+                                    stripped by Caddy, app serves at "/")
+bullpiggy.com/mlb-matchups/*      → `mlb` service (Next.js, basePath)
+```
 
-- **DNS**: bullpiggy.com zone on Cloudflare (registrar: GoDaddy, nameservers
-  `elly`/`fred.ns.cloudflare.com`). Apex is a CNAME to the tunnel; `www` is a
-  CNAME to the apex.
-- **Tunnel**: named `bullpiggy`. Config in `~/.cloudflared/config.yml`
-  (ingress: apex + www → `http://127.0.0.1:5001`), credentials JSON alongside
-  it. Manage with `cloudflared tunnel list|info|route`.
-- **Auto-start**: two LaunchAgents in `~/Library/LaunchAgents/`:
-  - `com.bullpiggy.app.plist` — runs `venv/bin/python app.py`
-  - `com.bullpiggy.tunnel.plist` — runs `cloudflared tunnel run bullpiggy`
-  Both RunAtLoad + KeepAlive; logs in `~/Library/Logs/bullpiggy-*.log`.
-  Restart one with `launchctl kickstart -k gui/$UID/com.bullpiggy.app`.
-  (Don't use `brew services start cloudflared` — it launches cloudflared
-  without the `tunnel run` subcommand and silently does nothing.)
-- **Auth**: Cloudflare Access (Zero Trust team `proud-mode-9523`) — a
-  self-hosted app covering both hostnames with an Allow policy for a single
-  email, one-time PIN login. Without it the app is wide open (it has no auth
-  of its own); never expose it publicly unprotected.
+Railway services (deployed via `railway up` from each repo; connect the
+GitHub app in Railway for push-to-deploy):
 
-To rebuild from scratch: add the zone to Cloudflare → point nameservers →
-`cloudflared tunnel login` → `tunnel create bullpiggy` →
-`tunnel route dns bullpiggy bullpiggy.com` → write config.yml → install the
-two LaunchAgents → re-create the Access app.
+- **engulfing** — Dockerfile: gunicorn (1 worker, SSE-safe `--timeout 0`)
+  + supercronic running `crontab.railway` (scanner 3:30 PM ET, paper trader
+  3:40, chase 3:56, Mon–Fri — same jobs the Mac crontab used to run; the Mac
+  crontab was removed so the paper account is never double-traded).
+  A volume is mounted at `/data`; `SIGNALS_DB=/data/signals.db` points the
+  SQLite DB there (seeded from the Mac's copy). Env vars (Alpaca paper keys,
+  SMTP/ntfy alert settings) live in the Railway service, mirroring `.env`.
+- **mlb** — MLB-Matchups repo, plain Next.js build.
+- **edge** — bullpiggy-edge repo: Caddyfile (routing + www→apex redirect +
+  SSE `flush_interval -1`) + the hub page/robots/sitemap. Custom domains
+  bullpiggy.com and www.bullpiggy.com attach here.
+
+Cloudflare (zone on Cloudflare, registrar GoDaddy):
+
+- **DNS**: apex CNAME → `w79f7tpx.up.railway.app`, `www` CNAME →
+  `rvnwcjbv.up.railway.app` (both proxied), plus two `_railway-verify` TXT
+  records. SSL mode **Full (strict)**.
+- **Auth**: Cloudflare Access (Zero Trust team `proud-mode-9523`), one
+  self-hosted app with three path destinations — owner-only (single-email
+  PIN policy `just-me`): `/engulfing-candles/api/scan`,
+  `/engulfing-candles/api/backtest`, `/engulfing-candles/api/paper`.
+  Everything else (page, history, stored backtest results, MLB board, hub)
+  is public. `/api/backtest/results` was renamed `/api/backtest-results` so
+  the prefix-matched gate on the trigger can't catch it. The frontend shows
+  an "owner-only" notice when a gated call fails before any data arrives.
+
+Ops quick reference:
+
+```bash
+railway logs -s engulfing     # app + cron output (scanner/paper logs)
+railway ssh -- ls -la /data   # inspect the SQLite volume
+railway up                    # redeploy from a linked repo directory
+```
 
 ## Notes
 
