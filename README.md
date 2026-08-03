@@ -231,6 +231,19 @@ railway ssh -- ls -la /data   # inspect the SQLite volume
 railway up                    # redeploy from a linked repo directory
 ```
 
+Alerting from Railway (learned 2026-08-03, the day the "cron didn't fire"):
+
+- **Telegram is the only working alert channel.** Railway has no IPv6 egress
+  and blocks/blackholes outbound SMTP (`Errno 101`), and ntfy.sh doesn't
+  answer Railway's IPv4 either (TCP timeout). Email + ntfy fail gracefully
+  now; don't debug them as outages.
+- The scanner records signals to the DB **before** any alerting, and each
+  channel is isolated — an alert failure can no longer cost the day's
+  signals or the paper trader's entries.
+- `railway ssh` mangles quoted commands; to run ad-hoc python in the
+  container, pipe it: `railway ssh -s engulfing -- python - < script.py`.
+  Service env vars (SIGNALS_DB etc.) are present in ssh sessions.
+
 ## Notes
 
 - Data comes from Yahoo Finance via `yfinance` (free, no API key). Quotes can
