@@ -433,16 +433,35 @@ def is_market_open_window() -> bool:
     return 9 * 60 + 30 <= minutes <= 16 * 60
 
 
+def is_just_after_close() -> bool:
+    """Weekdays 4:00–4:30 PM ET — the --at-close verdict scan runs here, when
+    the daily bar is final (a last-seconds engulfing close is only knowable
+    after the close)."""
+    now = datetime.now(ET)
+    if now.weekday() >= 5:
+        return False
+    minutes = now.hour * 60 + now.minute
+    return 16 * 60 <= minutes <= 16 * 60 + 30
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Engulfing candle scanner")
     parser.add_argument("--tickers", help="Comma-separated symbols (overrides tickers.txt)")
     parser.add_argument("--dry-run", action="store_true",
                         help="Run even outside market hours (for testing)")
+    parser.add_argument("--delta", action="store_true",
+                        help="Spot check: record everything, but only alert on "
+                             "signals that are NEW or NO LONGER VALID vs what "
+                             "today's earlier runs recorded")
+    parser.add_argument("--at-close", action="store_true",
+                        help="Allow running 4:00-4:30 PM ET (final-verdict scan "
+                             "on the completed daily bar)")
     args = parser.parse_args()
 
     load_dotenv(SCRIPT_DIR / ".env")
 
-    if not args.dry_run and not is_market_open_window():
+    if not args.dry_run and not is_market_open_window() and not (
+            args.at_close and is_just_after_close()):
         print("Market is closed (or it's a weekend). Use --dry-run to test anyway.")
         return
 
@@ -470,7 +489,16 @@ def main() -> None:
     # Highest conviction first: tier, then raw body multiple.
     hits.sort(key=lambda t: (conviction_tier(t[2]), t[2].get("body_mult") or 0),
               reverse=True)
-    alerts = [format_alert(sym, sig, d) for sym, sig, d in hits]
+
+    # Snapshot what earlier runs already recorded today BEFORE we record —
+    # this is what --delta diffs against.
+    today = datetime.now(ET).date().isoformat()
+    prev: set[tuple[str, str]] = set()
+    if args.delta:
+        try:
+            prev = history.signals_on(today)
+        except Exception as exc:
+            print(f"  [warn] could not load today's signals ({exc})", file=sys.stderr)
 
     # Persist FIRST — the paper trader and History tab feed off the DB, so
     # recording must never be hostage to an alert-channel failure (2026-08-03:
@@ -488,10 +516,33 @@ def main() -> None:
         except Exception as exc:
             print(f"  [warn] history update failed ({exc})", file=sys.stderr)
 
-    if alerts:
+    if args.delta:
+        current = {(sym, sig) for sym, sig, _ in hits}
+        new_hits = [(sym, sig, d) for sym, sig, d in hits if (sym, sig) not in prev]
+        dropped = sorted(prev - current)
+        label = "close verdict" if args.at_close else "spot check"
+        if not new_hits and not dropped:
+            print(f"\n[{label}] no changes vs earlier runs — staying quiet.")
+            return
+        parts = []
+        if new_hits:
+            parts.append("NEW since the last scan:\n\n"
+                         + "\n\n".join(format_alert(s, sig, d) for s, sig, d in new_hits))
+        if dropped:
+            parts.append("No longer valid (was signaled earlier today):\n"
+                         + "\n".join(f"  ✖ {sym} {sig}" for sym, sig in dropped))
+        alerts = [f"[{label}] " + f"{len(new_hits)} new, {len(dropped)} faded"]
+        body = (f"Engulfing {label} — {now_str}\n\n" + "\n\n".join(parts))
+        subject = f"Engulfing {label}: {len(new_hits)} new, {len(dropped)} faded"
+    elif hits:
+        alerts = [format_alert(sym, sig, d) for sym, sig, d in hits]
         body = f"Engulfing Scanner — {now_str}\n\n" + "\n\n".join(alerts)
-        print("\n" + "=" * 50 + "\nALERTS\n" + "=" * 50 + "\n" + body)
         subject = f"Engulfing Alert: {len(alerts)} signal(s)"
+    else:
+        alerts = []
+
+    if alerts:
+        print("\n" + "=" * 50 + "\nALERTS\n" + "=" * 50 + "\n" + body)
         # Each channel is independent: one failing must not mute the others.
         for channel in (lambda: send_email(subject, body),
                         lambda: send_ntfy(subject, body),

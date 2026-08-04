@@ -3,4 +3,13 @@
 # Output goes to stdout → Railway logs (no file redirects).
 30 15 * * 1-5 python /app/engulfing_scanner.py
 40 15 * * 1-5 python /app/paper_trader.py
+# Spot check (3:50 ET): re-scan, record anything new, alert ONLY on deltas —
+# new signals or earlier ones that no longer hold (SPCX 2026-08-03: spiked
+# 3:45 ET, 15 min after the main scan, and was never seen).
+50 15 * * 1-5 python /app/engulfing_scanner.py --delta
 56 15 * * 1-5 python /app/paper_trader.py --chase
+# Close verdict (4:05 ET): the engulfing pattern is a DAILY-CLOSE pattern, so
+# the final word — including a close that engulfs in the last seconds — is
+# only knowable after 4:00. Delta-alerts like the spot check; quiet if the
+# 3:30/3:50 picture held.
+5 16 * * 1-5 python /app/engulfing_scanner.py --delta --at-close

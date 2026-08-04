@@ -95,6 +95,19 @@ def record_signal(symbol: str, direction: str, d: dict,
         conn.close()
 
 
+def signals_on(trigger_date: str) -> set[tuple[str, str]]:
+    """(symbol, direction) pairs already recorded for a given trigger date —
+    lets the spot-check crons alert only on what changed since the last run."""
+    conn = _connect()
+    try:
+        rows = conn.execute(
+            "SELECT symbol, direction FROM signals WHERE trigger_date = ?",
+            (trigger_date,))
+        return {(r["symbol"], r["direction"]) for r in rows}
+    finally:
+        conn.close()
+
+
 def _last_complete_session() -> date:
     """
     Most recent weekday whose close is final (today only after 4 PM ET).
