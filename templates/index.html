@@ -630,7 +630,9 @@ function renderPaper(data){
     + `<b>${open.length}</b> open · <b>${closed.length}</b> closed · exit after ${data.exitAfter} trading days`;
 
   const rows = trades.map(t => {
-    const c = t.contract
+    const c = t.asset_type === 'stock'
+      ? (t.qty ? `${t.qty} shares` : 'shares')
+      : t.contract
       ? `${t.expiry} $${t.strike}C${t.delta ? ' Δ' + t.delta.toFixed(2) : ''}`
       : '–';
     let out = '<td class="dim">–</td>', pl = '<td class="dim">–</td>';

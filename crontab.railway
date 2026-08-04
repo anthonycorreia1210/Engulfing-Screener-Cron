@@ -7,6 +7,9 @@
 # new signals or earlier ones that no longer hold (SPCX 2026-08-03: spiked
 # 3:45 ET, 15 min after the main scan, and was never seen).
 50 15 * * 1-5 python /app/engulfing_scanner.py --delta
+# Second entry pass (3:52 ET): trade anything the spot check just surfaced
+# (entries are per-leg idempotent — signals already traded are untouched).
+52 15 * * 1-5 python /app/paper_trader.py
 56 15 * * 1-5 python /app/paper_trader.py --chase
 # Close verdict (4:05 ET): the engulfing pattern is a DAILY-CLOSE pattern, so
 # the final word — including a close that engulfs in the last seconds — is
