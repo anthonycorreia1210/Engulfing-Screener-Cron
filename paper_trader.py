@@ -67,7 +67,9 @@ TARGET_PCT_STOCK = 0.05   # of account equity into the share leg
 MAX_PCT = 0.30      # hard skip if 1 contract costs more than this
 MAX_SPREAD = 0.60   # skip contracts whose bid/ask spread exceeds 60% of mid
 MIN_TIER = 1        # starred signals only
-CHASE_MIN_TIER = 3  # only chase unfilled entries on the highest-conviction tier
+CHASE_MIN_TIER = 1  # chase unfilled option entries on ALL starred signals
+                    # (was 3; widened 2026-08-04 — a ★★ IBM entry nearly
+                    # expired unfilled with no chase coverage)
 EXIT_AFTER = history.TRACK_DAYS  # sell on the Nth trading day after trigger
 
 _SCHEMA = """
@@ -195,6 +197,23 @@ def _latest_stock_quote(stock_client, symbol: str):
     if bid <= 0 or ask <= 0 or ask < bid:
         return None
     return bid, ask, (bid + ask) / 2
+
+
+def _stock_ref_price(stock_client, symbol: str) -> float | None:
+    """Sizing price for the share leg: last trade first — the free IEX quote
+    can be wildly stale (2026-08-04: IBM quoted ~247 ask while trading ~234) —
+    falling back to the quote mid only if there's no trade."""
+    from alpaca.data.requests import StockLatestTradeRequest
+    try:
+        t = stock_client.get_stock_latest_trade(
+            StockLatestTradeRequest(symbol_or_symbols=symbol))[symbol]
+        px = float(t.price or 0)
+        if px > 0:
+            return px
+    except Exception:
+        pass
+    quote = _latest_stock_quote(stock_client, symbol)
+    return quote[2] if quote else None
 
 
 def _quote_for(row, option_client, stock_client):
@@ -416,23 +435,24 @@ def _enter_option_leg(conn, tc, data_client, s, tier, equity, dry_run) -> str | 
 
 
 def _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run) -> str | None:
+    """Share legs enter at MARKET — they must always fill (2026-08-04 rule);
+    the limit-at-mid honesty experiment applies to the option leg only."""
     from alpaca.trading.enums import OrderSide, TimeInForce
-    from alpaca.trading.requests import LimitOrderRequest
-    quote = _latest_stock_quote(stock_client, s["symbol"])
-    if quote is None:
+    from alpaca.trading.requests import MarketOrderRequest
+    ref = _stock_ref_price(stock_client, s["symbol"])
+    if ref is None:
         if not dry_run:
             with conn:
                 conn.execute(
                     "INSERT OR IGNORE INTO paper_trades"
                     " (signal_id, symbol, trigger_date, tier, status, note,"
                     "  asset_type)"
-                    " VALUES (?,?,?,?,'skipped','no two-sided stock quote',"
+                    " VALUES (?,?,?,?,'skipped','no stock price for sizing',"
                     "  'stock')",
                     (s["id"], s["symbol"], s["trigger_date"], tier))
-        return f"skipped {s['symbol']} {stars(tier)} shares: no quote"
-    mid = quote[2]
-    if mid > equity * MAX_PCT:
-        reason = f"1 share (~${mid:,.0f}) exceeds {MAX_PCT:.0%} of equity"
+        return f"skipped {s['symbol']} {stars(tier)} shares: no price"
+    if ref > equity * MAX_PCT:
+        reason = f"1 share (~${ref:,.0f}) exceeds {MAX_PCT:.0%} of equity"
         if not dry_run:
             with conn:
                 conn.execute(
@@ -442,17 +462,16 @@ def _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run) -> str | 
                     " VALUES (?,?,?,?,'skipped',?,'stock')",
                     (s["id"], s["symbol"], s["trigger_date"], tier, reason))
         return f"skipped {s['symbol']} {stars(tier)} shares: {reason}"
-    qty = max(1, math.floor(equity * TARGET_PCT_STOCK / mid))
-    limit = _stock_tick_round(mid)
-    cost = limit * qty
+    qty = max(1, math.floor(equity * TARGET_PCT_STOCK / ref))
+    cost = ref * qty
     desc = (f"{s['symbol']} {stars(tier)} {qty} share{'s' if qty != 1 else ''}"
-            f" limit {limit:.2f} (~${cost:,.0f}, {cost / equity:.1%} of equity)")
+            f" at market (~${cost:,.0f}, {cost / equity:.1%} of equity)")
     if dry_run:
         return "would buy " + desc
     try:
-        o = tc.submit_order(LimitOrderRequest(
+        o = tc.submit_order(MarketOrderRequest(
             symbol=s["symbol"], qty=qty, side=OrderSide.BUY,
-            time_in_force=TimeInForce.DAY, limit_price=limit))
+            time_in_force=TimeInForce.DAY))
     except Exception as exc:
         print(f"  [warn] stock entry order failed for {s['symbol']} ({exc})",
               file=sys.stderr)
@@ -461,11 +480,10 @@ def _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run) -> str | 
         conn.execute(
             "INSERT OR IGNORE INTO paper_trades"
             " (signal_id, symbol, trigger_date, tier, contract, qty, status,"
-            "  equity_at_entry, entry_order_id, entry_limit, exit_due,"
-            "  asset_type)"
-            " VALUES (?,?,?,?,?,?,'submitted',?,?,?,?,'stock')",
+            "  equity_at_entry, entry_order_id, exit_due, asset_type)"
+            " VALUES (?,?,?,?,?,?,'submitted',?,?,?,'stock')",
             (s["id"], s["symbol"], s["trigger_date"], tier, s["symbol"], qty,
-             equity, str(o.id), limit, _exit_due(tc, s["trigger_date"])))
+             equity, str(o.id), _exit_due(tc, s["trigger_date"])))
     return "buy " + desc
 
 
@@ -502,12 +520,12 @@ def do_entries(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
 
 def chase(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
     """
-    Final minutes before the close: convert still-unfilled DAY orders into
-    marketable limits so they execute instead of expiring.
-      - Entries: only tier >= CHASE_MIN_TIER (lower tiers stay mid-or-miss,
-        so the fill-capturability experiment continues for them).
-      - Exits: any tier — the +10-trading-day exit is part of the strategy
-        spec, so paying the spread beats selling a day late.
+    Convert still-unfilled DAY orders into marketable limits so they execute
+    instead of expiring. Runs twice near the close (3:48 + 3:56 ET).
+      - Entries: option legs only (stock legs enter at market and never need
+        chasing), any starred tier >= CHASE_MIN_TIER.
+      - Exits: any tier, both legs — the +10-trading-day exit is part of the
+        strategy spec, so paying the spread beats selling a day late.
     Replacing an order issues a NEW order id; the ledger row is re-pointed.
     """
     from alpaca.trading.requests import ReplaceOrderRequest
@@ -515,7 +533,8 @@ def chase(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
     today = datetime.now(ET).date().isoformat()
     rows = conn.execute(
         "SELECT * FROM paper_trades WHERE"
-        " (status='submitted' AND trigger_date=? AND tier >= ?)"
+        " (status='submitted' AND trigger_date=? AND tier >= ?"
+        "  AND asset_type != 'stock')"
         " OR status='exit_pending'", (today, CHASE_MIN_TIER)).fetchall()
     for r in rows:
         entry = r["status"] == "submitted"

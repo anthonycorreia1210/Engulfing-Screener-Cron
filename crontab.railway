@@ -3,6 +3,9 @@
 # Output goes to stdout → Railway logs (no file redirects).
 30 15 * * 1-5 python /app/engulfing_scanner.py
 40 15 * * 1-5 python /app/paper_trader.py
+# First chase (3:48 ET): give the 3:40 option entries a shot at a marketable
+# fill before the spot-check wave adds more orders.
+48 15 * * 1-5 python /app/paper_trader.py --chase
 # Spot check (3:50 ET): re-scan, record anything new, alert ONLY on deltas —
 # new signals or earlier ones that no longer hold (SPCX 2026-08-03: spiked
 # 3:45 ET, 15 min after the main scan, and was never seen).
