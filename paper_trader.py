@@ -7,8 +7,12 @@ Alpaca paper account, so the strategy can prove (or hang) itself with fake
 money and a real market before any real dollars are used.
 
 The strategy (agreed rules):
-  - Every starred bullish signal (body >= 1.5x prior range) recorded today.
-  - TWO legs per signal (2026-08-04 split — was 10% all-options):
+  - Every engulfing signal recorded today. Starred (body >= 1.5x prior
+    range) at full stake; unstarred at HALF (2026-08-05) — the backtest
+    found no tier-0 edge, so that half-stake is an explicit test of it.
+  - BEARISH signals buy PUTS only (14-24 DTE, delta ~-0.65, 5% of equity;
+    no short-share leg). Everything below describes the bullish side.
+  - TWO legs per bullish signal (2026-08-04 split — was 10% all-options):
       calls:  1+ CALLs, 30-45 DTE (widened to 25-60 when the window has no
               expirations), delta closest to 0.65, limit at the quote mid,
               sized to ~5% of account equity.
@@ -60,13 +64,22 @@ DB_PATH = history.DB_PATH  # single source of truth (honors SIGNALS_DB override)
 
 TARGET_DELTA = 0.65
 DTE_WINDOWS = ((30, 45), (25, 60))
+# Puts ride the 10-trading-day exit window with minimal time premium: the
+# nearest expiry that comfortably outlives the exit (~2-3 weeks), not the
+# 30-45 DTE call window (2026-08-05, owner: "Aug 21 exp are probably best"
+# for an Aug 5 trigger — that's 16 DTE).
+PUT_DTE_WINDOWS = ((14, 24), (10, 35))
 # Each signal opens TWO legs (2026-08-04): half the old 10% into calls, half
 # into straight shares — same thesis, two payoff shapes to compare.
 TARGET_PCT_OPTION = 0.05  # of account equity into the call leg
 TARGET_PCT_STOCK = 0.05   # of account equity into the share leg
+# Unstarred (tier 0) signals trade at HALF size (2026-08-05, owner). The 5y
+# backtest found no edge at tier 0, so this is a deliberate half-stake test
+# of that finding, not a backtested allocation.
+UNSTARRED_SCALE = 0.5
 MAX_PCT = 0.30      # hard skip if 1 contract costs more than this
 MAX_SPREAD = 0.60   # skip contracts whose bid/ask spread exceeds 60% of mid
-MIN_TIER = 1        # starred signals only
+MIN_TIER = 0        # trade every engulfer; tier 0 at half size
 CHASE_MIN_TIER = 1  # chase unfilled option entries on ALL starred signals
                     # (was 3; widened 2026-08-04 — a ★★ IBM entry nearly
                     # expired unfilled with no chase coverage)
@@ -234,20 +247,24 @@ def _stock_tick_round(px: float) -> float:
     return round(px, 2)
 
 
-def pick_contract(data_client, symbol: str, equity: float):
+def pick_contract(data_client, symbol: str, equity: float, bearish: bool = False):
     """
-    Choose the call to buy: 30-45 DTE (else 25-60), two-sided quote, sane
-    spread, delta closest to TARGET_DELTA among contracts affordable within
-    MAX_PCT of equity. Returns (contract dict, None) or (None, reason).
+    Choose the option to buy. Calls (bullish): 30-45 DTE (else 25-60), delta
+    closest to +0.65. Puts (bearish): 14-24 DTE (else 10-35), delta closest
+    to -0.65. Both need a two-sided quote and a sane spread, affordable
+    within MAX_PCT of equity. Returns (contract dict, None) or (None, reason).
     """
     from alpaca.data.requests import OptionChainRequest
     from alpaca.trading.enums import ContractType
     today = date.today()
+    windows = PUT_DTE_WINDOWS if bearish else DTE_WINDOWS
+    target = -TARGET_DELTA if bearish else TARGET_DELTA
     cands = []
-    for lo, hi in DTE_WINDOWS:
+    for lo, hi in windows:
         try:
             chain = data_client.get_option_chain(OptionChainRequest(
-                underlying_symbol=symbol, type=ContractType.CALL,
+                underlying_symbol=symbol,
+                type=ContractType.PUT if bearish else ContractType.CALL,
                 expiration_date_gte=today + timedelta(days=lo),
                 expiration_date_lte=today + timedelta(days=hi)))
         except Exception as exc:
@@ -269,8 +286,9 @@ def pick_contract(data_client, symbol: str, equity: float):
         if cands:
             break
     if not cands:
-        return None, "no liquid calls 25-60 DTE"
-    cands.sort(key=lambda c: abs(c["delta"] - TARGET_DELTA))
+        return None, ("no liquid puts 10-35 DTE" if bearish
+                      else "no liquid calls 25-60 DTE")
+    cands.sort(key=lambda c: abs(c["delta"] - target))
     affordable = [c for c in cands if c["mid"] * 100 <= equity * MAX_PCT]
     if not affordable:
         best = cands[0]
@@ -279,9 +297,15 @@ def pick_contract(data_client, symbol: str, equity: float):
     return affordable[0], None
 
 
-def _size(mid: float, equity: float) -> int:
+def _tier_scale(tier: int) -> float:
+    """Unstarred signals take half the normal stake."""
+    return UNSTARRED_SCALE if tier < 1 else 1.0
+
+
+def _size(mid: float, equity: float, tier: int = 1) -> int:
     """Contracts for ~TARGET_PCT_OPTION of equity; never fewer than 1."""
-    return max(1, math.floor(equity * TARGET_PCT_OPTION / (mid * 100)))
+    pct = TARGET_PCT_OPTION * _tier_scale(tier)
+    return max(1, math.floor(equity * pct / (mid * 100)))
 
 
 # ----------------------------------------------------------------------
@@ -390,10 +414,12 @@ def do_exits(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
     return events
 
 
-def _enter_option_leg(conn, tc, data_client, s, tier, equity, dry_run) -> str | None:
+def _enter_option_leg(conn, tc, data_client, s, tier, equity, dry_run,
+                      bearish: bool = False) -> str | None:
     from alpaca.trading.enums import OrderSide, TimeInForce
     from alpaca.trading.requests import LimitOrderRequest
-    contract, reason = pick_contract(data_client, s["symbol"], equity)
+    contract, reason = pick_contract(data_client, s["symbol"], equity, bearish)
+    kind = "puts" if bearish else "calls"
     if contract is None:
         if not dry_run:
             with conn:
@@ -403,8 +429,8 @@ def _enter_option_leg(conn, tc, data_client, s, tier, equity, dry_run) -> str | 
                     "  asset_type)"
                     " VALUES (?,?,?,?,'skipped',?,'option')",
                     (s["id"], s["symbol"], s["trigger_date"], tier, reason))
-        return f"skipped {s['symbol']} {stars(tier)} calls: {reason}"
-    qty = _size(contract["mid"], equity)
+        return f"skipped {s['symbol']} {stars(tier)} {kind}: {reason}"
+    qty = _size(contract["mid"], equity, tier)
     limit = _tick_round(contract["mid"])
     cost = limit * 100 * qty
     desc = (f"{s['symbol']} {stars(tier)} {qty}x {contract['contract']}"
@@ -462,7 +488,7 @@ def _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run) -> str | 
                     " VALUES (?,?,?,?,'skipped',?,'stock')",
                     (s["id"], s["symbol"], s["trigger_date"], tier, reason))
         return f"skipped {s['symbol']} {stars(tier)} shares: {reason}"
-    qty = max(1, math.floor(equity * TARGET_PCT_STOCK / ref))
+    qty = max(1, math.floor(equity * TARGET_PCT_STOCK * _tier_scale(tier) / ref))
     cost = ref * qty
     desc = (f"{s['symbol']} {stars(tier)} {qty} share{'s' if qty != 1 else ''}"
             f" at market (~${cost:,.0f}, {cost / equity:.1%} of equity)")
@@ -488,14 +514,18 @@ def _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run) -> str | 
 
 
 def do_entries(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
-    """Open both legs (calls + shares) for today's starred bullish signals.
-    Legs retry independently: a signal missing only its stock row (e.g. an
-    order submit failed) gets just that leg on the next pass."""
+    """
+    Open positions for today's starred signals:
+      BULLISH -> 5% calls (30-45 DTE) + 5% shares at market
+      BEARISH -> 5% puts (14-24 DTE); no short-share leg (2026-08-05)
+    Legs retry independently: a signal missing only one leg (e.g. an order
+    submit failed) gets just that leg on the next pass.
+    """
     events = []
     today = datetime.now(ET).date().isoformat()
     sigs = conn.execute(
-        "SELECT * FROM signals WHERE trigger_date = ? AND direction = 'BULLISH'"
-        "   AND body_mult >= 1.5 ORDER BY body_mult DESC", (today,)).fetchall()
+        "SELECT * FROM signals WHERE trigger_date = ?"
+        " ORDER BY body_mult DESC", (today,)).fetchall()
     if not sigs:
         return events
     existing = {(r["symbol"], r["asset_type"]) for r in conn.execute(
@@ -507,11 +537,15 @@ def do_entries(conn, tc, data_client, stock_client, dry_run=False) -> list[str]:
                                 "body_atr": s["body_atr"]})
         if tier < MIN_TIER:
             continue
+        bearish = s["direction"] == "BEARISH"
         if (s["symbol"], "option") not in existing:
-            ev = _enter_option_leg(conn, tc, data_client, s, tier, equity, dry_run)
+            ev = _enter_option_leg(conn, tc, data_client, s, tier, equity,
+                                   dry_run, bearish=bearish)
             if ev:
                 events.append(ev)
-        if (s["symbol"], "stock") not in existing:
+        # Long shares only express a bullish thesis; bearish signals are
+        # puts-only (no shorting in this experiment).
+        if not bearish and (s["symbol"], "stock") not in existing:
             ev = _enter_stock_leg(conn, tc, stock_client, s, tier, equity, dry_run)
             if ev:
                 events.append(ev)
