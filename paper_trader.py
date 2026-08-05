@@ -21,6 +21,9 @@ The strategy (agreed rules):
     edge better.
   - Always at least 1 contract / 1 share, but skip a leg entirely if its
     minimum size would cost > 30% of equity.
+  - Profit take (options only): the moment an option leg trades at 2x its
+    entry price, sell 60% of the contracts — cost basis off the table — and
+    let the other 40% run to the normal exit. Independent of the calendar.
   - Exit: sell BOTH legs to close on the 10th trading day after the trigger
     (the backtested edge window). First exit attempt is a limit at mid; if
     that day order expires unfilled, the next run sends a market order.
@@ -79,6 +82,11 @@ TARGET_PCT_STOCK = 0.05   # of account equity into the share leg
 UNSTARRED_SCALE = 0.5
 MAX_PCT = 0.30      # hard skip if 1 contract costs more than this
 MAX_SPREAD = 0.60   # skip contracts whose bid/ask spread exceeds 60% of mid
+# Profit-take (2026-08-05): when an option leg doubles, sell 60% of the
+# contracts immediately — cost basis off the table, 40% runs to the +10td
+# exit. Options only; share legs always ride the full window.
+PROFIT_TAKE_MULT = 2.0
+PROFIT_TAKE_FRAC = 0.60
 MIN_TIER = 0        # trade every engulfer; tier 0 at half size
 CHASE_MIN_TIER = 1  # chase unfilled option entries on ALL starred signals
                     # (was 3; widened 2026-08-04 — a ★★ IBM entry nearly
@@ -112,6 +120,12 @@ CREATE TABLE IF NOT EXISTS paper_trades (
     pnl             REAL,
     pnl_pct         REAL,
     asset_type      TEXT NOT NULL DEFAULT 'option',
+    partial_order_id TEXT,
+    partial_qty     INTEGER,
+    partial_price   REAL,
+    partial_date    TEXT,
+    partial_pnl     REAL,
+    partial_attempts INTEGER NOT NULL DEFAULT 0,
     UNIQUE (symbol, trigger_date, asset_type)
 );
 """
@@ -130,6 +144,13 @@ def _connect() -> sqlite3.Connection:
     # Pre-2026-08-04 DBs: single-leg rows + UNIQUE(symbol, trigger_date).
     # SQLite can't alter an inline constraint, so rebuild once.
     cols = {r[1] for r in conn.execute("PRAGMA table_info(paper_trades)")}
+    for col, decl in (("partial_order_id", "TEXT"), ("partial_qty", "INTEGER"),
+                      ("partial_price", "REAL"), ("partial_date", "TEXT"),
+                      ("partial_pnl", "REAL"),
+                      ("partial_attempts", "INTEGER NOT NULL DEFAULT 0")):
+        if col not in cols and "asset_type" in cols:
+            with conn:
+                conn.execute(f"ALTER TABLE paper_trades ADD COLUMN {col} {decl}")
     if "asset_type" not in cols:
         with conn:
             conn.execute("ALTER TABLE paper_trades RENAME TO paper_trades_old")
@@ -314,6 +335,41 @@ def _size(mid: float, equity: float, tier: int = 1) -> int:
 def reconcile(conn, tc) -> list[str]:
     """Resolve outstanding entry/exit orders against Alpaca. Returns events."""
     events = []
+    # Outstanding profit-take sells live on rows still marked 'open' (the
+    # remaining 40% is still a live position), so they reconcile separately.
+    for r in conn.execute(
+            "SELECT * FROM paper_trades WHERE partial_order_id IS NOT NULL"
+            " AND partial_price IS NULL").fetchall():
+        try:
+            o = tc.get_order_by_id(r["partial_order_id"])
+        except Exception as exc:
+            print(f"  [warn] partial lookup failed for {r['symbol']} ({exc})",
+                  file=sys.stderr)
+            continue
+        st = o.status.value
+        filled_qty = int(float(o.filled_qty or 0))
+        avg = float(o.filled_avg_price) if o.filled_avg_price else None
+        with conn:
+            if filled_qty > 0 and avg is not None:
+                pnl = (avg - r["entry_price"]) * _mult(r) * filled_qty
+                conn.execute(
+                    "UPDATE paper_trades SET qty = qty - ?, partial_qty=?,"
+                    " partial_price=?, partial_date=?, partial_pnl=?,"
+                    " partial_order_id=NULL,"
+                    " note=? WHERE id=?",
+                    (filled_qty, filled_qty, avg,
+                     (o.filled_at.date().isoformat() if o.filled_at
+                      else datetime.now(ET).date().isoformat()), pnl,
+                     f"took profit on {filled_qty} at {avg:.2f} (2x rule)",
+                     r["id"]))
+                events.append(f"profit-take filled {r['symbol']} {filled_qty}x"
+                              f" @ {avg} (+${pnl:,.0f})")
+            elif st in ("canceled", "expired", "rejected", "done_for_day"):
+                # Clear the marker so the next pass retries (at market).
+                conn.execute("UPDATE paper_trades SET partial_order_id=NULL"
+                             " WHERE id=?", (r["id"],))
+                events.append(f"profit-take unfilled {r['symbol']} ({st}),"
+                              " will retry")
     rows = conn.execute("SELECT * FROM paper_trades WHERE status IN"
                         " ('submitted', 'exit_pending')").fetchall()
     for r in rows:
@@ -351,7 +407,10 @@ def reconcile(conn, tc) -> list[str]:
                 if st == "filled":
                     pnl = pnl_pct = None
                     if avg is not None and r["entry_price"]:
-                        pnl = (avg - r["entry_price"]) * _mult(r) * r["qty"]
+                        # Total P&L spans both slices; the % stays per-contract
+                        # on the runner so it reads as a price move, not a blend.
+                        pnl = ((avg - r["entry_price"]) * _mult(r) * r["qty"]
+                               + (r["partial_pnl"] or 0))
                         pnl_pct = (avg - r["entry_price"]) / r["entry_price"] * 100
                     conn.execute(
                         "UPDATE paper_trades SET status='closed', exit_price=?,"
@@ -368,6 +427,62 @@ def reconcile(conn, tc) -> list[str]:
                                  " note='exit limit expired, will retry at market'"
                                  " WHERE id=?", (r["id"],))
                     events.append(f"exit unfilled {r['symbol']}, retrying")
+    return events
+
+
+def do_profit_takes(conn, tc, data_client, dry_run=False) -> list[str]:
+    """
+    Sell PROFIT_TAKE_FRAC of any option leg trading at >= PROFIT_TAKE_MULT x
+    its entry price, whatever the calendar says. Runs before do_exits so a
+    position that doubled on its exit day still books the runner normally.
+    First attempt is a limit at mid; a retry (the previous one expired) goes
+    to market so the gain can't evaporate waiting for a fill.
+    Share legs are untouched — they always ride the full +10td window.
+    A 1-lot can't be split 60/40, so it exits whole at the trigger.
+    """
+    from alpaca.trading.enums import OrderSide, TimeInForce
+    from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
+    events = []
+    rows = conn.execute(
+        "SELECT * FROM paper_trades WHERE status='open' AND asset_type='option'"
+        " AND partial_qty IS NULL AND partial_order_id IS NULL"
+        " AND entry_price IS NOT NULL AND qty > 0").fetchall()
+    for r in rows:
+        quote = _latest_quote(data_client, r["contract"])
+        if quote is None:
+            continue
+        mid = quote[2]
+        if mid < r["entry_price"] * PROFIT_TAKE_MULT:
+            continue
+        sell_qty = min(r["qty"], max(1, round(r["qty"] * PROFIT_TAKE_FRAC)))
+        gain = (mid / r["entry_price"] - 1) * 100
+        use_market = r["partial_attempts"] >= 1
+        desc = (f"{r['symbol']} {sell_qty}/{r['qty']}x {r['contract']} at"
+                f" {mid:.2f} (+{gain:.0f}%,"
+                f" {'market' if use_market else 'limit'})")
+        if dry_run:
+            events.append("would take profit " + desc)
+            continue
+        try:
+            if use_market:
+                req = MarketOrderRequest(symbol=r["contract"], qty=sell_qty,
+                                         side=OrderSide.SELL,
+                                         time_in_force=TimeInForce.DAY)
+            else:
+                req = LimitOrderRequest(symbol=r["contract"], qty=sell_qty,
+                                        side=OrderSide.SELL,
+                                        time_in_force=TimeInForce.DAY,
+                                        limit_price=_tick_round(mid))
+            o = tc.submit_order(req)
+        except Exception as exc:
+            print(f"  [warn] profit-take failed for {r['symbol']} ({exc})",
+                  file=sys.stderr)
+            continue
+        with conn:
+            conn.execute("UPDATE paper_trades SET partial_order_id=?,"
+                         " partial_attempts=partial_attempts+1 WHERE id=?",
+                         (str(o.id), r["id"]))
+        events.append("profit-take sent " + desc)
     return events
 
 
@@ -631,6 +746,8 @@ def run_chase(dry_run=False) -> None:
         now_str = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
         print(f"Chase pass at {now_str}")
         events = reconcile(conn, tc)
+        # A doubling can happen after the 3:40 pass; catch it before the bell.
+        events += do_profit_takes(conn, tc, data_client, dry_run=dry_run)
         events += chase(conn, tc, data_client, stock_client, dry_run=dry_run)
         for e in events:
             print("  " + e)
@@ -650,6 +767,7 @@ def run(dry_run=False, force=False) -> None:
         now_str = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
         print(f"Paper trader run at {now_str}")
         events = reconcile(conn, tc)
+        events += do_profit_takes(conn, tc, data_client, dry_run=dry_run)
         events += do_exits(conn, tc, data_client, stock_client, dry_run=dry_run)
         if is_market_open_window() or force or dry_run:
             events += do_entries(conn, tc, data_client, stock_client,
