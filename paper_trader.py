@@ -757,6 +757,41 @@ def run_chase(dry_run=False) -> None:
         conn.close()
 
 
+def run_profit_take(dry_run=False) -> None:
+    """
+    Intraday pass (every 30 min while the market is open): reconcile, then
+    take profits on anything that has doubled. No entries, no exits — those
+    belong to the near-close passes. Cheap: it only quotes open option legs,
+    and stays silent unless something actually fires, so a quiet day costs
+    nothing in logs or alerts.
+    """
+    if not is_market_open_window() and not dry_run:
+        return
+    tc, data_client, _ = _clients()
+    if tc is None:
+        return
+    conn = _connect()
+    try:
+        events = reconcile(conn, tc)
+        events += do_profit_takes(conn, tc, data_client, dry_run=dry_run)
+        if not events:
+            return
+        now_str = datetime.now(ET).strftime("%Y-%m-%d %H:%M ET")
+        print(f"Profit-take check at {now_str}")
+        for e in events:
+            print("  " + e)
+        if not dry_run:
+            body = f"Paper trader — {now_str}\n\n" + "\n".join(events)
+            for send in (send_ntfy, send_telegram):
+                try:
+                    send(f"Profit take: {len(events)} event(s)", body) \
+                        if send is send_ntfy else send(body)
+                except Exception:
+                    pass
+    finally:
+        conn.close()
+
+
 def run(dry_run=False, force=False) -> None:
     tc, data_client, stock_client = _clients()
     if tc is None:
@@ -868,10 +903,16 @@ def main() -> None:
     parser.add_argument("--chase", action="store_true",
                         help="Close-time pass: make still-unfilled orders"
                              " marketable (entries: 3-star only)")
+    parser.add_argument("--profit-take", action="store_true",
+                        help="Intraday pass: reconcile + take profits on"
+                             " doubled option legs; no entries or exits")
     args = parser.parse_args()
     load_dotenv(SCRIPT_DIR / ".env")
     if args.status:
         print_status()
+        return
+    if args.profit_take:
+        run_profit_take(dry_run=args.dry_run)
         return
     if args.chase:
         run_chase(dry_run=args.dry_run)

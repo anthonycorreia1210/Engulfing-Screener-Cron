@@ -1,6 +1,11 @@
 # Container crontab (supercronic) — times are ET; the image sets TZ=America/New_York.
 # The Mac crontab.txt ran these at 12:30/12:40/12:56 PT = 3:30/3:40/3:56 ET.
 # Output goes to stdout → Railway logs (no file redirects).
+# Intraday profit-take sweep, every 30 min from 9:30 ET to 3:00 ET. Catches
+# an option that doubles at 11am and fades before the close passes run.
+# Silent (no log spam, no alert) unless something actually fires.
+30 9-14 * * 1-5 python /app/paper_trader.py --profit-take
+0 10-15 * * 1-5 python /app/paper_trader.py --profit-take
 30 15 * * 1-5 python /app/engulfing_scanner.py
 40 15 * * 1-5 python /app/paper_trader.py
 # First chase (3:48 ET): give the 3:40 option entries a shot at a marketable
