@@ -10,9 +10,9 @@
 #   16:00 ET  FINAL push (1 PM PT) — rebuilt against posted lineups, merged
 #             with the early set so started games stay on the record, then
 #             FROZEN. This is what gets graded.
-0 10,11 * * * curl -sS --max-time 120 http://mlb.railway.internal:3000/mlb-matchups/api/picks/cron
-0 12 * * * curl -sS --max-time 180 "http://mlb.railway.internal:3000/mlb-matchups/api/picks/alert?stage=early"
-0 16 * * * curl -sS --max-time 180 "http://mlb.railway.internal:3000/mlb-matchups/api/picks/alert?stage=final"
+0 10,11 * * * python /app/mlb_cron.py http://mlb.railway.internal:3000/mlb-matchups/api/picks/cron
+0 12 * * * python /app/mlb_cron.py "http://mlb.railway.internal:3000/mlb-matchups/api/picks/alert?stage=early"
+0 16 * * * python /app/mlb_cron.py "http://mlb.railway.internal:3000/mlb-matchups/api/picks/alert?stage=final"
 # Intraday profit-take sweep, every 30 min from 9:30 ET to 3:00 ET. Catches
 # an option that doubles at 11am and fades before the close passes run.
 # Silent (no log spam, no alert) unless something actually fires.
