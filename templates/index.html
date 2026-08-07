@@ -36,6 +36,35 @@
   .page-title{margin:0;font-size:26px;letter-spacing:-.02em;line-height:1.15}
   .sub{color:var(--muted);margin-top:8px;font-size:14px}
 
+
+  /* ============ mobile ============
+     Tables here run to 17 columns. They already scroll inside .histwrap, but
+     on a phone you lose track of WHICH ticker a row belongs to once you swipe
+     right — so the symbol column pins to the left edge. */
+  @media (max-width:640px){
+    .wrap{padding:20px 14px 60px}
+    .page-title{font-size:22px}
+    .sub{font-size:13px}
+    /* four tabs don't fit a 375px row; let them scroll instead of squashing */
+    .tabs{overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:none}
+    .tabs::-webkit-scrollbar{display:none}
+    .tab{padding:8px 11px;font-size:13px;white-space:nowrap}
+    table.hist{font-size:12px}
+    .hist th,.hist td{padding:7px 8px}
+    /* hard edge so the half-scrolled next column reads as "underneath",
+       not as clipped garbage butted against the ticker */
+    .hist th:first-child,.hist td:first-child{position:sticky;left:0;padding-left:12px;
+      background:var(--panel);box-shadow:1px 0 0 var(--border),6px 0 8px -6px rgba(0,0,0,.65)}
+    .hist thead th:first-child{z-index:3}
+    .hist tbody td:first-child{z-index:2}
+    .grid{grid-template-columns:1fr}
+    .stats{grid-template-columns:repeat(auto-fit,minmax(min(100%,150px),1fr))}
+    .controls{gap:10px;margin:16px 0}
+    .histbar{margin:18px 0 10px}
+    .histnote,.note{font-size:11.5px}
+    button#run,button#btrun{padding:11px 18px;font-size:14px}
+  }
+
   /* ---- site nav (mirrors the MLB board's; keep the two in sync) ---- */
   /* Lifted off the page background so the chrome reads as a separate band.
      Link states use translucent overlays rather than --panel, which would
