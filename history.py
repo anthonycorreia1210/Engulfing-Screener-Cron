@@ -30,6 +30,10 @@ DB_PATH = Path(os.environ.get("SIGNALS_DB") or Path(__file__).resolve().parent /
 TRACK_DAYS = 10  # trading days ~= 2 calendar weeks
 
 _SCHEMA = """
+CREATE TABLE IF NOT EXISTS meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS signals (
     id            INTEGER PRIMARY KEY AUTOINCREMENT,
     symbol        TEXT NOT NULL,
@@ -91,6 +95,62 @@ def record_signal(symbol: str, direction: str, d: dict,
                  d.get("prev_open"), d.get("prev_close"), d.get("body_mult"),
                  d.get("body_atr")))
             return cur.rowcount > 0
+    finally:
+        conn.close()
+
+
+def _get_meta(conn, key: str) -> str | None:
+    row = conn.execute("SELECT value FROM meta WHERE key = ?", (key,)).fetchone()
+    return row["value"] if row else None
+
+
+def _set_meta(conn, key: str, value: str) -> None:
+    conn.execute("INSERT INTO meta (key, value) VALUES (?,?)"
+                 " ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                 (key, value))
+
+
+def _weekdays_between(start: date, end: date) -> int:
+    """Weekdays strictly after `start` through `end`. Holidays count as trading
+    days here — close enough for a "has this gone quiet?" check."""
+    n, d = 0, start + timedelta(days=1)
+    while d <= end:
+        if d.weekday() < 5:
+            n += 1
+        d += timedelta(days=1)
+    return n
+
+
+def dry_spell_warning(threshold: int) -> str | None:
+    """
+    A message when the scanner has gone `threshold` trading days without a
+    single signal, else None.
+
+    Fires ONCE per dry spell: the last signal's date is stored as an anchor
+    when we warn, so the streak has to be broken by a real signal before
+    another warning is possible. Without that anchor this would nag daily for
+    the rest of the drought, which is exactly the noise a heartbeat is
+    supposed to avoid.
+    """
+    conn = _connect()
+    try:
+        row = conn.execute("SELECT symbol, trigger_date FROM signals"
+                           " ORDER BY trigger_date DESC LIMIT 1").fetchone()
+        if not row:
+            return None  # nothing recorded ever — no baseline to judge against
+        last_date = date.fromisoformat(row["trigger_date"])
+        streak = _weekdays_between(last_date, datetime.now(ET).date())
+        if streak < threshold:
+            return None
+        if _get_meta(conn, "dry_spell_anchor") == row["trigger_date"]:
+            return None  # already warned for this spell
+        with conn:
+            _set_meta(conn, "dry_spell_anchor", row["trigger_date"])
+        return (f"\U0001F437 BullPiggy — scanner heartbeat\n\n"
+                f"No engulfing signals in {streak} trading days.\n"
+                f"Last one: {row['symbol']} on {row['trigger_date']}.\n\n"
+                f"The scan itself is running fine — flagging it because a gap "
+                f"this long is unusual and worth an eyeball.")
     finally:
         conn.close()
 

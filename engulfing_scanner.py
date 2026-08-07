@@ -36,6 +36,11 @@ import history
 ET = ZoneInfo("America/New_York")
 SCRIPT_DIR = Path(__file__).resolve().parent
 
+# Trading days of total silence before the scanner pings to say it's still
+# alive. Signals normally land most days, so a gap this long is unusual — and
+# without this, a broken scanner is indistinguishable from a quiet market.
+DRY_SPELL_DAYS = 3
+
 
 # ----------------------------------------------------------------------
 # Config helpers
@@ -553,6 +558,17 @@ def main() -> None:
                 print(f"  [warn] alert channel failed ({exc})", file=sys.stderr)
     else:
         print("\nNo engulfing setups found.")
+        # Silence is the normal result of a clean scan, which makes a BROKEN
+        # scanner look identical to a quiet market. Speak up only when the
+        # quiet has gone on long enough to be worth checking.
+        if not args.dry_run:
+            try:
+                warning = history.dry_spell_warning(DRY_SPELL_DAYS)
+                if warning:
+                    send_telegram(warning)
+                    print("[dry-spell heartbeat sent]")
+            except Exception as exc:
+                print(f"  [warn] dry-spell check failed ({exc})", file=sys.stderr)
 
 
 if __name__ == "__main__":
