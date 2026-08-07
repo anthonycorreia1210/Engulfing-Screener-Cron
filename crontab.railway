@@ -1,10 +1,15 @@
 # Container crontab (supercronic) — times are ET; the image sets TZ=America/New_York.
 # The Mac crontab.txt ran these at 12:30/12:40/12:56 PT = 3:30/3:40/3:56 ET.
 # Output goes to stdout → Railway logs (no file redirects).
-# MLB Top Picks maintenance (that service has no scheduler of its own; this
-# reaches it over Railway's private network). 10:00 ET grades yesterday's
-# picks; 11:00/13:00 refresh today's as real lineup cards replace projections.
-0 10,11,13 * * * curl -sS --max-time 120 http://mlb.railway.internal:3000/mlb-matchups/api/picks/cron
+# MLB Top Picks (that service has no scheduler of its own; this reaches it over
+# Railway's private network). Times are ET, so 12:00 here is 9:00 AM PT
+# year-round — both zones shift for DST together.
+#   10:00 ET  grade yesterday's slate once every game is final
+#   11:00 ET  refresh today's picks as real lineup cards replace projections
+#   12:00 ET  send the daily push (9 AM PT) — this also FREEZES the set, so the
+#             site can never disagree with the message that went out
+0 10,11 * * * curl -sS --max-time 120 http://mlb.railway.internal:3000/mlb-matchups/api/picks/cron
+0 12 * * * curl -sS --max-time 180 http://mlb.railway.internal:3000/mlb-matchups/api/picks/alert
 # Intraday profit-take sweep, every 30 min from 9:30 ET to 3:00 ET. Catches
 # an option that doubles at 11am and fades before the close passes run.
 # Silent (no log spam, no alert) unless something actually fires.
